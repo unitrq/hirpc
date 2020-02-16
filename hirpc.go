@@ -33,8 +33,6 @@ import (
 	"unicode"
 )
 
-const specSeparator = "." // method specifier service name separator
-
 var (
 	// reflect.Type of Context and error
 	typeOfContext = reflect.TypeOf((*context.Context)(nil)).Elem()
@@ -45,6 +43,8 @@ var (
 type CallHandler func(context.Context) (interface{}, error)
 
 // CallRequest - method call request provided by transport layer implementation.
+// This object tells Endpoint which service and method to look up and which parameter type
+// incoming data should match when constructing new method call context.
 type CallRequest interface {
 	ServiceMethod() (string, string) // returns service and method names respectively
 	Parameter(interface{}) error     // decodes parameter into value or returns error
@@ -57,7 +57,7 @@ type CallResult struct {
 	val interface{}
 }
 
-// MethodHandler - stores reflected method and specific signature request/response types.
+// MethodHandler - stores reflected method function reference and specific signature request/response types.
 type MethodHandler struct {
 	Meth    reflect.Method // method pointer
 	ReqType reflect.Type   // signature parameter type
@@ -73,9 +73,14 @@ type ServiceHandler struct {
 	mw       []func(*MethodCall, CallHandler) CallHandler // service-specific call handlers
 }
 
-// MethodCall - service method reference resolved by dispatcher
+// MethodCall - captures context of single method call.
+// MethodCall stores all objects required to invoke function reference produced by reflect package.
+// Instead of executing dispatched request directly, Endpoint returns this frozen state object
+// to allow calling side to precisely schedule execution of every single method call.
+// This allows calling side to enforce required call execution scheduling policies for example to allow batching multiple
+// method calls into single request/response roundtrip.
 type MethodCall struct {
-	CallRequest CallRequest                                  // call request object provided by transport layer handler for dispatch
+	CallRequest CallRequest                                  // call request object provided by transport layer handler used to dispatch
 	SH          *ServiceHandler                              // service owning target method
 	MH          *MethodHandler                               // target method handler
 	Param       reflect.Value                                // deserialized parameter
@@ -83,7 +88,7 @@ type MethodCall struct {
 	mw          []func(*MethodCall, CallHandler) CallHandler // middlewares applied to this call
 }
 
-// Endpoint - service registry and method call dispatcher.
+// Endpoint - resolves CallRequest's into *MethodCalls against registered services
 type Endpoint struct {
 	mx       sync.RWMutex                                 // used for synchronized service (de-)registration and lookup
 	services map[string]*ServiceHandler                   // registered services
@@ -208,7 +213,7 @@ func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*MethodCall, 
 	return nil
 }
 
-// Register - register service in namespace
+// Register - register service in endpoint
 func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*MethodCall, CallHandler) CallHandler) error {
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
@@ -223,7 +228,7 @@ func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*MethodCa
 	return nil
 }
 
-// Unregister - remove service from ep
+// Unregister - remove service from endpoint
 func (ep *Endpoint) Unregister(name string) error {
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
