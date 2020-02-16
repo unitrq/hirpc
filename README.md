@@ -1,5 +1,4 @@
 # hirpc - dynamic RPC service dispatcher for net/http handler interface
----
 Package hirpc provide `Endpoint` type - simple dynamic dispatch service registry for user-defined structs mostly inspired by [github.com/gorilla/rpc](https://github.com/gorilla/rpc). It allows user to expose exported struct methods matching specific signature pattern as a set of named RPC services using standard library net/http request handler interface.
 `Endpoint` maintains collection of named service instances and their exposed methods as flat namespace with methods identified by service and method names.
 When registering struct as a service with `Register` method, `Endpoint` relies on `reflect` package to extract, validate and store user type metadata for later use.
@@ -32,7 +31,6 @@ type HTTPCodec interface {
 ```
 
 # Usage
----
 Define handler service and parameter types
 ```go
 type EchoService struct {
@@ -96,4 +94,4 @@ http://localhost:8000/
 
 # ToDo
 - Add tests
-- Document all exported types
+- Improve documentation
