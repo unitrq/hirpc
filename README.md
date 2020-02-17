@@ -60,7 +60,7 @@ http://localhost:8000/
 # Description
 `Endpoint` maintains metadata collection for set of service instances and their methods collected using `reflect` package when user registers new service instance. All struct methods matching signature pattern of 
 ```go
-func (t *T) ExportedMethod(context.Context, in *struct{...}, out *struct{...}) error
+func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 ``` 
 are considered as exported RPC handlers and registered as methods of this service. Parameter names as well as any other methods and properties are ignored. In order to handle incoming http request, `Endpoint` decodes request body into set of `CallRequest` objects using `HTTPCodec` implementation. `CallRequest` tells `Endpoint` which method of which service caller is looking for, provides method to decode raw parameter data into pointer to specific type instance and constructor for protocol-level response object. Then `Endpoint` schedules successfully resolved calls for background execution using bounding semaphore to limit concurrency - this is what `limit` parameter in `NewEndpoint` constructor for. `DefaultBatchLimit` constant limits concurrency to 1 sequentially ordering method calls whithin request. `Endpoint` public methods are synchronized using `sync.RWMutex` so it's safe to `Register` and `Unregister` services at runtime.
 
@@ -74,4 +74,6 @@ are considered as exported RPC handlers and registered as methods of this servic
 
 # Known limitations and bugs
 The only implemented `HTTPCodec` is currently a JSON-RPC 2.0 compatible codec in `jsonrpc` subpackage.
-It `SHOULD` be spec compliant but there are probably some violations I don't know about yet.
+It resolves method specifier into service and method name accordingly by attempting to left split it once with "." separator.
+If split fails empty string resolved as service name and original method specifier as method name attempting lookup on `Endpoint` namespace root.
+This codec `SHOULD` be spec compliant but there are probably some violations I don't know about yet.
