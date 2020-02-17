@@ -21,7 +21,6 @@
 // SOFTWARE.
 
 // Go net/http handler interface RPC library - this package provide simple RPC dynamic dispatcher
-// and net/http compatible transport interface adapter for it.
 
 package hirpc
 
