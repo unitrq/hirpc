@@ -132,9 +132,9 @@ func (ss *SequentialScheduler) Execute(ctx context.Context, handlers []func()) e
 }
 
 // Execute - execute multiple handlers in background limiting concurrency by semaphore instance
-func (bs *ConcurrentScheduler) Execute(ctx context.Context, handlers []func()) error {
+func (cs *ConcurrentScheduler) Execute(ctx context.Context, handlers []func()) error {
 	var wg sync.WaitGroup
-	limit := bs.Limit
+	limit := cs.Limit
 	if limit < 1 {
 		limit = 1
 	}
