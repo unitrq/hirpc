@@ -37,7 +37,7 @@ Create `Endpoint` using `jsonrpc` protocol codec and start http server
 ```go
 func main() {
 	es := &EchoService{}
-	ep := hirpc.NewEndpoint(jsonrpc.DefaultCodec, hirpc.DefaultBatchLimit)
+	ep := hirpc.NewEndpoint(jsonrpc.DefaultCodec, hirpc.DefaultCallScheduler)
 	ep.Register("echo", es)
 	srv := &http.Server{
 		Addr:    ":8000",
