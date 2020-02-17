@@ -172,6 +172,9 @@ func callResponse(id *json.RawMessage, res interface{}, err error) *Response {
 func (c *Codec) encodeResponse(w http.ResponseWriter, result hirpc.CallResult) {
 	w.Header().Set("Content-Type", jsonContentType)
 	w.WriteHeader(200)
+	if result == nil {
+		return
+	}
 	json.NewEncoder(w).Encode(result)
 }
 
