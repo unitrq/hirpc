@@ -117,7 +117,7 @@ type SequentialScheduler struct {
 
 // ConcurrentScheduler - concurrently executing call scheduler
 type ConcurrentScheduler struct {
-	limit int // concurrency limit per request
+	Limit int // concurrency limit per request
 }
 
 // Execute - execute handlers in order of appearance
@@ -134,7 +134,7 @@ func (ss *SequentialScheduler) Execute(ctx context.Context, handlers []func()) e
 // Execute - execute multiple handlers in background limiting concurrency by semaphore instance
 func (bs *ConcurrentScheduler) Execute(ctx context.Context, handlers []func()) error {
 	var wg sync.WaitGroup
-	limit := bs.limit
+	limit := bs.Limit
 	if limit < 1 {
 		limit = 1
 	}
@@ -243,7 +243,7 @@ func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*MethodCall, 
 
 // Register - register RPC handler instance by service name
 // All exported instance methods matching following signature will be exposed for public access:
-// func (t *T) ExportedMethod(context.Context, in *struct{...}, out *struct{...}) error
+// func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 // Registering multiple service using same name is an error.
 // Registering service with empty name returns result of Endpoint.Root method
 func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*MethodCall, CallHandler) CallHandler) error {
@@ -413,13 +413,12 @@ func (ep *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, func() {
 			if res := cr.Result(mc.Invoke(ctx)); res != nil {
 				out <- res
-				return
 			} // discard result if CallRequest.Result returns nil
 		})
 	}
-	e := ep.sched.Execute(ctx, calls)
-	close(out) // stop collector
-	<-done     // wait for it to complete
+	e := ep.sched.Execute(ctx, calls) // wait until handlers complete
+	close(out)                        // stop result collector
+	<-done                            // wait for it to complete
 	if e != nil || ctx.Err() != nil {
 		ep.codec.EncodeError(w, e)
 		return
