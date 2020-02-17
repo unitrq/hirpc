@@ -26,6 +26,7 @@ package jsonrpc
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -85,7 +86,7 @@ type Codec struct {
 
 // Request - procedure call request object
 type Request struct {
-	ID      *string          `json:"id"`
+	ID      *json.RawMessage `json:"id"`
 	Method  string           `json:"method"`
 	Version string           `json:"jsonrpc"`
 	Params  *json.RawMessage `json:"params"`
@@ -93,10 +94,10 @@ type Request struct {
 
 // Response - procedure call response object
 type Response struct {
-	ID      *string     `json:"id"`
-	Version string      `json:"jsonrpc"`
-	Result  interface{} `json:"result,omitempty"`
-	Error   *Error      `json:"error,omitempty"`
+	ID      *json.RawMessage `json:"id"`
+	Version string           `json:"jsonrpc"`
+	Result  interface{}      `json:"result,omitempty"`
+	Error   *Error           `json:"error,omitempty"`
 }
 
 // Error - error description object
@@ -107,10 +108,13 @@ type Error struct {
 }
 
 // NewError - new JSON-RPC error value constructor
-func NewError(code int, msg string) *Error {
+func NewError(code int, err error) *Error {
+	if e, ok := err.(*Error); ok {
+		return e
+	}
 	return &Error{
 		Code:    code,
-		Message: msg,
+		Message: err.Error(),
 	}
 }
 
@@ -119,8 +123,8 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
-// ServiceMethod - return service and method names respectively
-func (r *Request) ServiceMethod() (string, string) {
+// Target - return service and method names respectively
+func (r *Request) Target() (string, string) {
 	sp := strings.Split(r.Method, ".")
 	if len(sp) == 2 {
 		return sp[0], sp[1]
@@ -128,87 +132,95 @@ func (r *Request) ServiceMethod() (string, string) {
 	return "", r.Method
 }
 
-// Parameter - decode parameter into value or return error
-func (r *Request) Parameter(val interface{}) error {
+// Payload - decode parameter into value or return error
+func (r *Request) Payload(val interface{}) error {
 	return json.Unmarshal(*r.Params, val)
 }
 
+// Result - decode parameter into value or return error
+func (r *Request) Result(v interface{}, err error) hirpc.CallResult {
+	if r.ID == nil {
+		return nil
+	}
+	return callResponse(r.ID, v, err)
+}
+
+// GetResult - get call result
+func (r *Response) GetResult() (v interface{}, err error) {
+	return r.Result, r.Error
+}
+
 // DecodeRequest - decodes POST request body into one or more JSON-RPC 2.0 method calls
-func (c *Codec) DecodeRequest(r *http.Request) (map[string]hirpc.CallRequest, error) {
+func (c *Codec) DecodeRequest(r *http.Request) ([]hirpc.CallRequest, error) {
 	if r.Method != "POST" {
-		return nil, NewError(EInvalidRequest, "method not allowed")
+		return nil, NewError(EInvalidRequest, fmt.Errorf("method not allowed"))
 	}
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, maxBodySize))
 	r.Body.Close()
 	if err != nil {
-		return nil, NewError(EParseError, err.Error())
+		return nil, NewError(EParseError, err)
 	}
 	// try to unmarshal as batch array first, decoder will fail early on non-array
-	calls := []*Request{}
-	if err := json.Unmarshal(body, &calls); err != nil {
+	requests := make([]*Request, 0)
+	if err := json.Unmarshal(body, &requests); err != nil {
 		call := &Request{}
 		if err := json.Unmarshal(body, call); err != nil {
-			return nil, NewError(EParseError, "failed to unmarshal request body")
+			return nil, NewError(EParseError, err)
 		}
-		calls = append(calls, call)
+		requests = append(requests, call)
 	}
-	res := make(map[string]hirpc.CallRequest, len(calls))
-	for _, call := range calls {
-		if call.ID == nil || len(*call.ID) == 0 {
-			id := srnd.new(8)
-			call.ID = &id
-		}
-		for {
-			if _, ok := res[*call.ID]; !ok {
-				break
-			}
-			id := srnd.new(8)
-			call.ID = &id
-		}
-		res[*call.ID] = call
+	calls := make([]hirpc.CallRequest, len(requests))
+	for i, r := range requests {
+		calls[i] = r
 	}
-	return res, nil
+	return calls, nil
 }
 
-// callResponse - single call response constructor
-func callResponse(id *string, cr hirpc.CallResult) *Response {
+// callResponse - call response constructor
+func callResponse(id *json.RawMessage, res interface{}, err error) *Response {
 	response := &Response{
 		ID:      id,
 		Version: "2.0",
 	}
-	result, err := cr.Result()
-	if err != nil {
-		response.Error = NewError(EServerErrorMin, err.Error())
+	if err == nil {
+		response.Result = res
 	} else {
-		response.Result = result
+		response.Error = NewError(EServerErrorMax, err)
 	}
 	return response
 }
 
-// EncodeResponse - encodes one CallResult into JSON-RPC 2.0 response
-func (c *Codec) EncodeResponse(w http.ResponseWriter, id *string, result hirpc.CallResult) {
+// encodeResponse - encodes one CallResult into JSON-RPC 2.0 response
+func (c *Codec) encodeResponse(w http.ResponseWriter, result hirpc.CallResult) {
 	w.Header().Set("Content-Type", jsonContentType)
 	w.WriteHeader(200)
-	response := callResponse(id, result)
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(result)
 }
 
-// EncodeResponses - encodes multiple CallResult's into JSON-RPC 2.0 response
-func (c *Codec) EncodeResponses(w http.ResponseWriter, results map[string]hirpc.CallResult) {
+// encodeResponses - encodes multiple CallResult's into JSON-RPC 2.0 response
+func (c *Codec) encodeResponses(w http.ResponseWriter, results []hirpc.CallResult) {
 	if len(results) < 2 {
-		for id, r := range results {
-			v := id
-			c.EncodeResponse(w, &v, r)
+		for _, r := range results {
+			c.encodeResponse(w, r)
 		}
 		return
 	}
 	w.Header().Set("Content-Type", jsonContentType)
 	w.WriteHeader(200)
 	enc := json.NewEncoder(w)
-	res := make([]*Response, 0, len(results))
-	for id, r := range results {
-		i := id
-		res = append(res, callResponse(&i, r))
+	enc.Encode(results)
+}
+
+// EncodeError - encode error message into http response
+func (c *Codec) EncodeError(w http.ResponseWriter, err error) {
+	c.encodeResponse(w, callResponse(nil, nil, err))
+}
+
+// EncodeResults - encode multiple call results into http response
+func (c *Codec) EncodeResults(w http.ResponseWriter, results ...hirpc.CallResult) {
+	if len(results) == 1 {
+		c.encodeResponse(w, results[0])
+		return
 	}
-	enc.Encode(res)
+	c.encodeResponses(w, results)
 }

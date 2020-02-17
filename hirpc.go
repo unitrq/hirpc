@@ -28,10 +28,16 @@ package hirpc
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"reflect"
 	"sync"
 	"unicode"
+
+	"golang.org/x/sync/semaphore"
 )
+
+// DefaultBatchLimit - order multiple method calls sequentially per request
+const DefaultBatchLimit = 1
 
 var (
 	// reflect.Type of Context and error
@@ -42,19 +48,23 @@ var (
 // CallHandler - method call handling function
 type CallHandler func(context.Context) (interface{}, error)
 
-// CallRequest - method call request provided by transport layer implementation.
-// This object tells Endpoint which service and method to look up and which parameter type
-// incoming data should match when constructing new method call context.
+// CallRequest - HTTPCodec single method call request object
 type CallRequest interface {
-	ServiceMethod() (string, string) // returns service and method names respectively
-	Parameter(interface{}) error     // decodes parameter into value or returns error
+	Target() (string, string)             // decode call request target service and method name
+	Payload(interface{}) error            // decode call request parameter payload into specific type pointer
+	Result(interface{}, error) CallResult // construct result object specific for this request and protocol
 }
 
-// CallResult - represents value or error as call result
-// This implementation expects normal method call result value pointer can never be succesfully cast to error interface.
-// If val is castable to error, it is treated as transport codec level application error
-type CallResult struct {
-	val interface{}
+// CallResult - HTTPCodec method call protocol response object
+type CallResult interface {
+	GetResult() (interface{}, error)
+}
+
+// HTTPCodec - translates single http request into set of method call requests and set of call results or error into http response
+type HTTPCodec interface {
+	EncodeError(http.ResponseWriter, error)             // send http response representing single error message
+	EncodeResults(http.ResponseWriter, ...CallResult)   // send http response representing one or more call results
+	DecodeRequest(*http.Request) ([]CallRequest, error) // read and close http request body and decode one or more method call requests to execute, return (nil, nil) if request is valid but no calls was decoded
 }
 
 // MethodHandler - stores reflected method function reference and specific signature request/response types.
@@ -74,18 +84,18 @@ type ServiceHandler struct {
 }
 
 // MethodCall - captures context of single method call.
-// MethodCall stores all objects required to invoke function reference produced by reflect package.
+// Stores all objects required to invoke function reference produced by reflect package.
 // Instead of executing dispatched request directly, Endpoint returns this frozen state object
 // to allow calling side to precisely schedule execution of every single method call.
 // This allows calling side to enforce required call execution scheduling policies for example to allow batching multiple
 // method calls into single request/response roundtrip.
 type MethodCall struct {
-	CallRequest CallRequest                                  // call request object provided by transport layer handler used to dispatch
-	SH          *ServiceHandler                              // service owning target method
-	MH          *MethodHandler                               // target method handler
-	Param       reflect.Value                                // deserialized parameter
-	Result      reflect.Value                                // allocated result container
-	mw          []func(*MethodCall, CallHandler) CallHandler // middlewares applied to this call
+	Request CallRequest                                  // dispatch source provided by codec, used to construct codec response for this call
+	SH      *ServiceHandler                              // service owning target method
+	MH      *MethodHandler                               // target method handler
+	Param   reflect.Value                                // deserialized parameter
+	Result  reflect.Value                                // allocated result container
+	mw      []func(*MethodCall, CallHandler) CallHandler // middlewares applied to this call
 }
 
 // Endpoint - resolves CallRequest's into *MethodCalls against registered services
@@ -94,37 +104,11 @@ type Endpoint struct {
 	services map[string]*ServiceHandler                   // registered services
 	mw       []func(*MethodCall, CallHandler) CallHandler // globally applied middleware
 	root     *ServiceHandler                              // this service is exposed as namespace root when dispatching method call if set (when service name == "")
+	codec    HTTPCodec                                    // transport protocol request and response codec
+	batch    int                                          // max number of concurrently running calls, 0 forces sequential execution
 }
 
-// Result - returns call result or error
-func (cr CallResult) Result() (interface{}, error) {
-	if err, ok := cr.val.(error); ok {
-		return nil, err
-	}
-	return cr.val, nil
-}
-
-// ServiceName - returns name of call receiver service
-func (call *MethodCall) ServiceName() string {
-	return call.SH.Name
-}
-
-// MethodName - returns name of call receiver method
-func (call *MethodCall) MethodName() string {
-	return call.MH.Meth.Name
-}
-
-// ParamIf - returns interface pointer to call parameter value
-func (call *MethodCall) ParamIf() interface{} {
-	return call.Param.Interface()
-}
-
-// ResultIf - returns interface pointer to call result value
-func (call *MethodCall) ResultIf() interface{} {
-	return call.Result.Interface()
-}
-
-// invoke - invokes actual target method in call context
+// invoke - invokes actual target method using call context
 func (call *MethodCall) invoke(ctx context.Context) (interface{}, error) {
 	errVal := call.MH.Meth.Func.Call([]reflect.Value{
 		call.SH.Inst,
@@ -135,30 +119,16 @@ func (call *MethodCall) invoke(ctx context.Context) (interface{}, error) {
 	if eIf := errVal[0].Interface(); eIf != nil {
 		return nil, eIf.(error)
 	}
-	return call.ResultIf(), nil
+	return call.Result.Interface(), nil
 }
 
-// Sync - block until target method returns
-func (call *MethodCall) Sync(ctx context.Context) CallResult {
+// Invoke - block until target method returns
+func (call *MethodCall) Invoke(ctx context.Context) (interface{}, error) {
 	handler := call.invoke
 	for _, mw := range call.mw {
 		handler = mw(call, handler)
 	}
-	res, err := handler(ctx)
-	if err != nil {
-		return CallResult{err}
-	}
-	return CallResult{res}
-}
-
-// Async - invoke method in background goroutine
-func (call *MethodCall) Async(ctx context.Context) chan CallResult {
-	c := make(chan CallResult)
-	go func() {
-		defer close(c)
-		c <- call.Sync(ctx)
-	}()
-	return c
+	return handler(ctx)
 }
 
 // isCapitalized - returns true if string starts with uppercase
@@ -175,9 +145,17 @@ func isExportedOrBuiltin(t reflect.Type) bool {
 }
 
 // NewEndpoint - create new service dispatcher
-func NewEndpoint(mw ...func(*MethodCall, CallHandler) CallHandler) *Endpoint {
+func NewEndpoint(codec HTTPCodec, limit int, mw ...func(*MethodCall, CallHandler) CallHandler) *Endpoint {
+	if codec == nil {
+		return nil
+	}
+	if limit < 1 {
+		limit = 1
+	}
 	ep := &Endpoint{
 		services: make(map[string]*ServiceHandler),
+		codec:    codec,
+		batch:    limit,
 		mw:       mw[:],
 	}
 	return ep
@@ -267,31 +245,31 @@ func (ep *Endpoint) resolve(service, method string) (*ServiceHandler, *MethodHan
 }
 
 // dispatch - resolve method handler and construct method call instance
-func (ep *Endpoint) dispatch(req CallRequest) (*MethodCall, error) {
-	sh, mh, err := ep.resolve(req.ServiceMethod())
+func (ep *Endpoint) dispatch(cr CallRequest) (*MethodCall, error) {
+	service, method := cr.Target()
+	sh, mh, err := ep.resolve(service, method)
 	if err != nil {
 		return nil, err
 	}
 	param := reflect.New(mh.ReqType)
-	if err := req.Parameter(param.Interface()); err != nil {
+	if err := cr.Payload(param.Interface()); err != nil {
 		return nil, err
 	}
-	result := reflect.New(mh.ResType)
 	return &MethodCall{
-		CallRequest: req,
-		Param:       param,
-		Result:      result,
-		SH:          sh,
-		MH:          mh,
-		mw:          ep.mw,
+		Request: cr,
+		Param:   param,
+		Result:  reflect.New(mh.ResType),
+		SH:      sh,
+		MH:      mh,
+		mw:      ep.mw,
 	}, nil
 }
 
 // Dispatch - resolve request into MethodCall
-func (ep *Endpoint) Dispatch(req CallRequest) (*MethodCall, error) {
+func (ep *Endpoint) Dispatch(cr CallRequest) (*MethodCall, error) {
 	ep.mx.RLock()
 	defer ep.mx.RUnlock()
-	return ep.dispatch(req)
+	return ep.dispatch(cr)
 }
 
 // createHandler - creates new handler if method signature matches requirements, else returns nil
@@ -345,8 +323,80 @@ func newServiceHandler(name string, inst interface{}, mw ...func(*MethodCall, Ca
 			s.Methods[mh.Meth.Name] = mh
 		}
 	}
-	// if len(s.Methods) == 0 {
-	// 	log.Println("service instance have no handler methods")
-	// }
 	return s, nil
+}
+
+// semaphore - used to bound batch execution concurrency or to order calls sequentially
+func (ep *Endpoint) semaphore() *semaphore.Weighted {
+	size := ep.batch
+	if size < 1 {
+		size = 1
+	}
+	return semaphore.NewWeighted(int64(size))
+}
+
+// ServeHTTP - decode request body into multiple call requests and execute them sequentially or concurrently
+func (ep *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	requests, err := ep.codec.DecodeRequest(r)
+	if err != nil {
+		ep.codec.EncodeError(w, err)
+		return
+	}
+	var (
+		wg      sync.WaitGroup // running call handlers wait group
+		l       = len(requests)
+		ctx     = r.Context()
+		sem     = ep.semaphore()           // concurrency limit semaphore
+		calls   = make([]func(), 0, l)     // resolved method calls
+		out     = make(chan CallResult)    // result collection channel, closed by call handling completion waiter
+		results = make([]CallResult, 0, l) // collection of results
+		done    = make(chan struct{})      // closed by result collector when all result producers completed and all results collected
+	)
+	go func() { // start results collector to allow pushing dispatch errors early
+		defer close(done)
+		for res := range out {
+			results = append(results, res)
+		}
+	}()
+	for _, cr := range requests { // dispatch call requests and create semaphore gated closures
+		mc, err := ep.Dispatch(cr)
+		if err != nil {
+			out <- cr.Result(nil, err)
+			continue
+		}
+		calls = append(calls, func() {
+			defer sem.Release(1)
+			defer wg.Done()
+			if ctx.Err() != nil {
+				return
+			}
+			if res := cr.Result(mc.Invoke(ctx)); res != nil {
+				out <- res
+			} // discard result if CallRequest.Result returns nil
+		})
+	}
+	for _, call := range calls { // start as much calls as semaphore permits
+		if err := ctx.Err(); err != nil {
+			ep.codec.EncodeError(w, ctx.Err())
+			return
+		}
+		if err := sem.Acquire(ctx, 1); err != nil {
+			ep.codec.EncodeError(w, err)
+			return
+		}
+		wg.Add(1)
+		go call()
+	}
+	go func() { // call handling completion waiter
+		defer close(out)
+		wg.Wait()
+	}()
+	select {
+	case <-ctx.Done():
+		ep.codec.EncodeError(w, ctx.Err())
+		return
+	case <-done:
+		break
+	}
+	ep.codec.EncodeResults(w, results...)
 }
