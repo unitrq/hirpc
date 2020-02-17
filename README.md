@@ -72,10 +72,12 @@ are treated as exported RPC handlers and registered as methods of this service. 
 # ToDo
 - Add tests
 - Improve documentation
+- Find a way to generate handlers with go-swagger
 
 # Known limitations and bugs
 The only implemented `HTTPCodec` is currently a JSON-RPC 2.0 compatible codec in `jsonrpc` subpackage.
 It resolves method specifier into service and method name accordingly by attempting to left split it once with "." separator.
 If split fails empty string resolved as service name and original method specifier as method name attempting lookup on `Endpoint` namespace root.
-It does not implement any "rpc" namespace introspection (yet?)
-This codec `SHOULD` be spec compliant but there are probably some violations I don't know about yet.
+It does not implement any "rpc" namespace introspection (but probably could).
+
+This codec `SHOULD` be spec compliant but there are probably some violations I don't know about.
