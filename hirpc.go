@@ -244,7 +244,6 @@ func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*MethodCall, 
 // Register - register RPC handler instance by service name
 // All exported instance methods matching following signature will be exposed for public access:
 // func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
-// Registering multiple service using same name is an error.
 // Registering service with empty name returns result of Endpoint.Root method
 func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*MethodCall, CallHandler) CallHandler) error {
 	if name == "" {
@@ -252,9 +251,6 @@ func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*MethodCa
 	}
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
-	if _, ok := ep.services[name]; ok {
-		return fmt.Errorf("service already registered")
-	}
 	s, err := newServiceHandler(name, inst, mw...)
 	if err != nil {
 		return err
