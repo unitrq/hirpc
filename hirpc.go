@@ -196,7 +196,7 @@ func isExportedOrBuiltin(t reflect.Type) bool {
 	return isCapitalized(t.Name()) || t.PkgPath() == ""
 }
 
-// NewEndpoint - create new RPC endpoint
+// NewEndpoint - create new RPC endpoint, returns nil if codec or sched is nil
 func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*MethodCall, CallHandler) CallHandler) *Endpoint {
 	if codec == nil || sched == nil {
 		return nil
