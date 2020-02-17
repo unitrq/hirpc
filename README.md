@@ -68,7 +68,7 @@ In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface
 *Shared state access within handler methods implementation is subject to proper synchronization by user, since multiple instances of multiple method calls could be running concurrently.*
 
 `Endpoint` public methods are synchronized using `sync.RWMutex` so it's safe to `Register` and `Unregister` services at runtime.
-`NewEndpoint` and `Endpoint.Register` accept variadic list of function parameters acting as simple middleware stack endpoint-wise and service-wise respectively. Middleware function should match `func(*MethodCall, CallHandler) CallHandler` signature and is applied in source order when resolved method call gets actually invoked. `CallHandler` is a function type defined like this: `type CallHandler func(context.Context) (interface{}, error)`
+`NewEndpoint`, `Endpoint.Register` and `Endpoint.Root` functions accept variadic list of function parameters acting as simple middleware stack endpoint-wise and service-wise respectively. Middleware function should match `func(*MethodCall, CallHandler) CallHandler` signature and is applied in source order when resolved method call gets actually invoked. `CallHandler` is a function type defined like this: `type CallHandler func(context.Context) (interface{}, error)`
 
 Service registered with empty name or using `Endpoint.Root` method is a namespace root service, `Endpoint` dispatches calls with empty service name to namespace root if it's not nil. Registering new service under same name discards previously registered instance.
 
