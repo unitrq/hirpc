@@ -325,8 +325,8 @@ func (ep *Endpoint) Dispatch(cr CallRequest) (*MethodCall, error) {
 	return ep.dispatch(cr)
 }
 
-// createHandler - creates new handler if method signature matches requirements, else returns nil
-func createHandler(meth reflect.Method) *MethodHandler {
+// newMethodHandler - creates new handler if method signature matches requirements, else returns nil
+func newMethodHandler(meth reflect.Method) *MethodHandler {
 	// check if method signature match in general
 	if meth.PkgPath != "" || meth.Type.NumIn() != 4 || meth.Type.NumOut() != 1 {
 		return nil
@@ -372,7 +372,7 @@ func newServiceHandler(name string, inst interface{}, mw ...func(*MethodCall, Ca
 	}
 	n := s.InstType.NumMethod()
 	for i := 0; i < n; i++ {
-		if mh := createHandler(s.InstType.Method(i)); mh != nil {
+		if mh := newMethodHandler(s.InstType.Method(i)); mh != nil {
 			s.Methods[mh.Meth.Name] = mh
 		}
 	}
