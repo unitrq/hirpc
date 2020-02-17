@@ -80,11 +80,11 @@ Service registered with empty name or using `Endpoint.Root` method is a namespac
 
 # Known limitations and bugs
 The only implemented `HTTPCodec` is currently a JSON-RPC 2.0 compatible codec in `jsonrpc` subpackage.
-It resolves method specifier into service and method name accordingly by attempting to left split it once with "." separator.
+Method specifier resolved into service and method name accordingly by attempting to left split it once with "." separator.
 If split fails empty string resolved as service name and original method specifier as method name attempting lookup on `Endpoint` namespace root.
-It does not implement any "rpc" namespace introspection (but probably could).
-Maximum allowed request body size is set to 2097152 bytes by constant in codec source.
 
-This codec `SHOULD` be spec compliant but there are probably some violations I don't know about.
+It does not implement any `rpc` namespace introspection (but probably could).
+
+Maximum allowed request body size is set to 2097152 bytes by maxBodySize constant in codec source.
 
 CallResult interface doesn't really do anything useful and its method is not called anywhere. It is only used to identify protocol codec response objects produced by corresponding request objects, allowing codec implementation to match each call result to call request in a protocol-specific way when constructing response.
