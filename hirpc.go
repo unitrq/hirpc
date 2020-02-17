@@ -98,7 +98,7 @@ type MethodCall struct {
 	mw      []func(*MethodCall, CallHandler) CallHandler // middlewares applied to this call
 }
 
-// Endpoint - resolves CallRequest's into *MethodCalls against registered services
+// Endpoint - RPC service registry
 type Endpoint struct {
 	mx       sync.RWMutex                                 // used for synchronized service (de-)registration and lookup
 	services map[string]*ServiceHandler                   // registered services
@@ -144,7 +144,7 @@ func isExportedOrBuiltin(t reflect.Type) bool {
 	return isCapitalized(t.Name()) || t.PkgPath() == ""
 }
 
-// NewEndpoint - create new service dispatcher
+// NewEndpoint - create new RPC endpoint
 func NewEndpoint(codec HTTPCodec, limit int, mw ...func(*MethodCall, CallHandler) CallHandler) *Endpoint {
 	if codec == nil {
 		return nil
@@ -179,7 +179,8 @@ func (ep *Endpoint) Use(mw ...func(*MethodCall, CallHandler) CallHandler) {
 	ep.mw = append(ep.mw, mw...)
 }
 
-// Root - set service as namespace root
+// Root - register RPC handler instance as namespace root
+// This service is used for method lookup when dispatched service name is empty
 func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*MethodCall, CallHandler) CallHandler) error {
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
@@ -191,8 +192,15 @@ func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*MethodCall, 
 	return nil
 }
 
-// Register - register service in endpoint
+// Register - register RPC handler instance by service name
+// All exported instance methods matching following signature will be exposed for public access:
+// func (t *T) ExportedMethod(context.Context, in *struct{...}, out *struct{...}) error
+// Registering multiple service using same name is an error.
+// Registering service with empty name returns result of Endpoint.Root method
 func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*MethodCall, CallHandler) CallHandler) error {
+	if name == "" {
+		return ep.Root(name, inst, mw...)
+	}
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
 	if _, ok := ep.services[name]; ok {

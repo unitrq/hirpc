@@ -1,34 +1,12 @@
 # hirpc - dynamic RPC service dispatcher for net/http handler interface
-Package hirpc provide `Endpoint` type - simple dynamic dispatch service registry for user-defined structs. Most of it was inspired by [github.com/gorilla/rpc](https://github.com/gorilla/rpc). It allows user to expose exported struct methods matching specific signature pattern as a set of named RPC services using standard library net/http request handler interface.
-`Endpoint` maintains collection of named service instances and their exposed methods as flat namespace with methods identified by service and method names.
-When registering struct as a service with `Register` method, `Endpoint` relies on `reflect` package to extract, validate and store user type metadata for later use.
-All struct methods matching signature pattern of 
+Package hirpc provide `Endpoint` type - simple dynamic dispatch service registry for user defined structs. Most of it was inspired by [github.com/gorilla/rpc](https://github.com/gorilla/rpc). It allows user to expose exported struct methods matching specific signature pattern as a set of named RPC services using standard library net/http request handler interface and specific protocol codec adapter.
+`Endpoint` maintains metadata collection of service instances and their methods collected using `reflect` package when user registers new service instance. All struct methods matching signature pattern of 
 ```go
 func (t *T) ExportedMethod(context.Context, in *struct{...}, out *struct{...}) error
 ``` 
-are considered as exported RPC handlers and exposed as methods of this service. Parameter names as well as any other methods and properties are ignored.
+are considered as exported RPC handlers and exposed as methods of this service. Parameter names as well as any other methods and properties are ignored. In order to handle incoming http request, `Endpoint` decodes request body into set of `CallRequest` objects using `HTTPCodec` implementation. `CallRequest` tells `Endpoint` which method of which service caller is looking for and provides method to decode raw parameter data into pointer to specific type instance and constructor for protocol-level response object. `Endpoint` schedules successfully resolved calls for background execution using bounding semaphore to limit concurrency - this is what `limit` parameter in `NewEndpoint` constructor for.
 *Shared state access within handler methods is subject to proper synchronization by user, since multiple instances of multiple method calls could be running concurrently.*
-In order to invoke call handler, service and method are looked up and method call context gets constructed with `Dispatch(req CallRequest) (*MethodCall, error)` method from `CallRequest` interface
-```go
-// CallRequest - method call request provided by transport layer implementation.
-type CallRequest interface {
-	ServiceMethod() (string, string) // returns service and method names respectively
-	Parameter(interface{}) error     // decodes parameter into value or returns error
-}
-```
-`CallRequest` tells `Endpoint` which method of which service is called and provides method to decode raw parameter data into pointer to specific type instance.
-If method lookup succeeds and parameter type matches receiver defined by handler signature, `Endpoint` constructs `MethodCall` object which represents single method invocation context with decoded parameter value and newly allocated result receiver value. This `MethodCall` object is then used to execute actual procedure call handler and retrieve result as `CallResult` object.
-`CallResult` is a simple wrapper struct over `interface{}` value used to represent either error-castable object which is treated as call terminated with error, or serializable object which is treated as normal method call result.
-
-`Endpoint` also provides `NewHTTPHandler(codec HTTPCodec, batch int) (*HTTPHandler, error)` method which returns `net/http` handler interface implementation. `batch` parameter defines how many method calls are allowed to run concurrently per request. `codec` parameter defines actual RPC protocol implementation used over http request transport, providing handler a way to decode http request payload into some RPC method calls and to encode one or many results back into response maintaining mapping between each possible call in request and its result in response:
-```go
-// HTTPCodec - translates http request into set of marked requests and writes one or many results into response stream
-type HTTPCodec interface {
-	DecodeRequest(*http.Request) (map[string]CallRequest, error)
-	EncodeResponse(http.ResponseWriter, *string, CallResult)
-	EncodeResponses(http.ResponseWriter, map[string]CallResult)
-}
-```
+The only implemented `HTTPCodec` is currently a JSON-RPC 2.0 spec compatible codec.
 
 # Usage
 Define handler service and parameter types
@@ -66,16 +44,12 @@ func (es *EchoService) Count(ctx context.Context, _ *struct{}, res *Count) error
 Create `Endpoint`, register service, create handler for JSON-RPC protocol codec and start http server
 ```go
 func main() {
-	ep := hirpc.NewEndpoint()
 	es := &EchoService{}
+	ep := hirpc.NewEndpoint(jsonrpc.DefaultCodec, hirpc.DefaultBatchLimit)
 	ep.Register("echo", es)
-	eh, err := ep.NewHTTPHandler(jsonrpc.DefaultCodec, hirpc.DefaultBatchLimit)
-	if err != nil {
-		log.Fatalln(err)
-	}
 	srv := &http.Server{
 		Addr:    ":8000",
-		Handler: eh,
+		Handler: ep,
 	}
 	if err := srv.ListenAndServe(); err != nil {
 		log.Println(err)
