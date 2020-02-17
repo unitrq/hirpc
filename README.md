@@ -63,7 +63,8 @@ http://localhost:8000/
 func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 ``` 
 are treated as exported RPC handlers and registered as methods of this service. Parameter names as well as any other methods and properties are ignored.
-In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concrurrently or sequentially. First, `Endpoint` decodes request body into set of `CallRequest` objects using `HTTPCodec.DecodeRequest` implementation. `CallRequest` tells `Endpoint` which method of which service caller is looking for, provides method to decode raw parameter data into pointer to specific type instance and constructor for protocol-level response object. Then `Endpoint` schedules successfully resolved calls for background execution using `CallScheduler` instance and awaits results. Package provides `SequentialScheduler` implementation to execute multiple method calls in sequential order and `ConcurrentScheduler` for semaphore-bounded concurrent execution of multiple handlers.
+In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concrurrently or sequentially. First, `Endpoint` decodes request body into set of `CallRequest` objects using `HTTPCodec.DecodeRequest` implementation. `CallRequest` tells `Endpoint` which method of which service caller is looking for, provides method to decode raw parameter data into pointer to specific type instance and constructor for protocol-level response object. Then `Endpoint` schedules successfully resolved calls for background execution using `CallScheduler` instance and awaits results. Method call results then passed to `HTTPCodec` as a collection of `CallResult` objects used to construct http response.
+Package provides `SequentialScheduler` implementation to execute multiple method calls in sequential order and `ConcurrentScheduler` for semaphore-bounded concurrent execution of multiple handlers.
 
 *Shared state access within handler methods implementation is subject to proper synchronization by user, since multiple instances of multiple method calls could be running concurrently.*
 
@@ -84,3 +85,5 @@ If split fails empty string resolved as service name and original method specifi
 It does not implement any "rpc" namespace introspection (but probably could).
 
 This codec `SHOULD` be spec compliant but there are probably some violations I don't know about.
+
+CallResult interface doesn't really do anything useful and its method is not called anywhere. It is only used to identify protocol codec response objects produced by corresponding request objects, allowing codec implementation to match each call result to call request in a protocol-specific way when constructing response.
