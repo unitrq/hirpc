@@ -85,6 +85,6 @@ If split fails empty string resolved as service name and original method specifi
 
 It does not implement any `rpc` namespace introspection (but probably could).
 
-Maximum allowed request body size is set to 2097152 bytes by maxBodySize constant in codec source.
+Maximum allowed request body size is set to 2097152 bytes by `maxBodySize` constant in codec source.
 
-CallResult interface doesn't really do anything useful and its method is not called anywhere. It is only used to identify protocol codec response objects produced by corresponding request objects, allowing codec implementation to match each call result to call request in a protocol-specific way when constructing response.
+`CallResult` interface doesn't really do anything useful and its method is not called anywhere. It is only used to identify protocol codec response objects produced by corresponding request objects, allowing codec implementation to match each call result to call request in a protocol-specific way when constructing response.
