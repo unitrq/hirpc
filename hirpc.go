@@ -322,7 +322,7 @@ func newServiceHandler(name string, inst interface{}, mw ...func(*MethodCall, Ca
 	if name == "" {
 		s.Name = reflect.Indirect(s.Inst).Type().Name()
 		if !isCapitalized(s.Name) {
-			return nil, fmt.Errorf("service name required for instance type %s", s.InstType.String())
+			return nil, fmt.Errorf("instance type %s not exported", s.InstType.String())
 		}
 	}
 	n := s.InstType.NumMethod()
