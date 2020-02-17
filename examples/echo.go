@@ -40,16 +40,12 @@ func (es *EchoService) Count(ctx context.Context, _ *struct{}, res *Count) error
 }
 
 func main() {
-	ep := hirpc.NewEndpoint()
 	es := &EchoService{}
+	ep := hirpc.NewEndpoint(jsonrpc.DefaultCodec, hirpc.DefaultBatchLimit)
 	ep.Register("echo", es)
-	eh, err := ep.NewHTTPHandler(jsonrpc.DefaultCodec, hirpc.DefaultBatchLimit)
-	if err != nil {
-		log.Fatalln(err)
-	}
 	srv := &http.Server{
 		Addr:    ":8000",
-		Handler: eh,
+		Handler: ep,
 	}
 	if err := srv.ListenAndServe(); err != nil {
 		log.Println(err)
