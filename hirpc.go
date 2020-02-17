@@ -35,13 +35,12 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-// DefaultBatchLimit - order multiple method calls sequentially per request
-const DefaultBatchLimit = 1
-
 var (
 	// reflect.Type of Context and error
 	typeOfContext = reflect.TypeOf((*context.Context)(nil)).Elem()
 	typeOfError   = reflect.TypeOf((*error)(nil)).Elem()
+	// DefaultCallScheduler - default call execution scheduler
+	DefaultCallScheduler = &SequentialScheduler{}
 )
 
 // CallHandler - method call handling function
@@ -64,6 +63,11 @@ type HTTPCodec interface {
 	EncodeError(http.ResponseWriter, error)             // send http response representing single error message
 	EncodeResults(http.ResponseWriter, ...CallResult)   // send http response representing one or more call results
 	DecodeRequest(*http.Request) ([]CallRequest, error) // read and close http request body and decode one or more method call requests to execute, return (nil, nil) if request is valid but no calls was decoded
+}
+
+// CallScheduler - used to execute multiple method calls decoded from request untill all methods finish or context gets cancelled
+type CallScheduler interface {
+	Execute(context.Context, []func()) error
 }
 
 // MethodHandler - stores reflected method function reference and specific signature request/response types.
@@ -104,7 +108,56 @@ type Endpoint struct {
 	mw       []func(*MethodCall, CallHandler) CallHandler // globally applied middleware
 	root     *ServiceHandler                              // this service is exposed as namespace root when dispatching method call if set (when service name == "")
 	codec    HTTPCodec                                    // transport protocol request and response codec
-	batch    int                                          // max number of concurrently running calls, 0 forces sequential execution
+	sched    CallScheduler                                // request call execution scheduler
+}
+
+// SequentialScheduler - sequential execution call scheduler
+type SequentialScheduler struct {
+}
+
+// ConcurrentScheduler - concurrently executing call scheduler
+type ConcurrentScheduler struct {
+	limit int // concurrency limit per request
+}
+
+// Execute - execute handlers in order of appearance
+func (ss *SequentialScheduler) Execute(ctx context.Context, handlers []func()) error {
+	for _, handle := range handlers {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		handle()
+	}
+	return nil
+}
+
+// Execute - execute multiple handlers in background limiting concurrency by semaphore instance
+func (bs *ConcurrentScheduler) Execute(ctx context.Context, handlers []func()) error {
+	var wg sync.WaitGroup
+	limit := bs.limit
+	if limit < 1 {
+		limit = 1
+	}
+	sem := semaphore.NewWeighted(int64(limit))
+	for _, h := range handlers {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := sem.Acquire(ctx, 1); err != nil {
+			return err
+		}
+		wg.Add(1)
+		handle := h
+		go func() {
+			defer sem.Release(1)
+			defer wg.Done()
+			if ctx.Err() == nil {
+				handle()
+			}
+		}()
+	}
+	wg.Wait()
+	return nil
 }
 
 // invoke - invokes actual target method using call context
@@ -144,17 +197,14 @@ func isExportedOrBuiltin(t reflect.Type) bool {
 }
 
 // NewEndpoint - create new RPC endpoint
-func NewEndpoint(codec HTTPCodec, limit int, mw ...func(*MethodCall, CallHandler) CallHandler) *Endpoint {
-	if codec == nil {
+func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*MethodCall, CallHandler) CallHandler) *Endpoint {
+	if codec == nil || sched == nil {
 		return nil
-	}
-	if limit < 1 {
-		limit = 1
 	}
 	ep := &Endpoint{
 		services: make(map[string]*ServiceHandler),
 		codec:    codec,
-		batch:    limit,
+		sched:    sched,
 		mw:       mw[:],
 	}
 	return ep
@@ -333,15 +383,6 @@ func newServiceHandler(name string, inst interface{}, mw ...func(*MethodCall, Ca
 	return s, nil
 }
 
-// semaphore - used to bound batch execution concurrency or to order calls sequentially
-func (ep *Endpoint) semaphore() *semaphore.Weighted {
-	size := ep.batch
-	if size < 1 {
-		size = 1
-	}
-	return semaphore.NewWeighted(int64(size))
-}
-
 // ServeHTTP - decode request body into multiple call requests and execute them sequentially or concurrently
 func (ep *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requests, err := ep.codec.DecodeRequest(r)
@@ -350,14 +391,12 @@ func (ep *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var (
-		wg      sync.WaitGroup // running call handlers wait group
 		l       = len(requests)
 		ctx     = r.Context()
-		sem     = ep.semaphore()           // concurrency limit semaphore
-		calls   = make([]func(), 0, l)     // resolved method calls
-		out     = make(chan CallResult)    // result collection channel, closed by call handling completion waiter
-		results = make([]CallResult, 0, l) // collection of results
-		done    = make(chan struct{})      // closed by result collector when all result producers completed and all results collected
+		calls   = make([]func(), 0, l)  // resolved method calls
+		out     = make(chan CallResult) // result collection channel
+		done    = make(chan struct{})   // closed when all results collected
+		results = make([]CallResult, 0, l)
 	)
 	go func() { // start results collector to allow pushing dispatch errors early
 		defer close(done)
@@ -372,38 +411,18 @@ func (ep *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		calls = append(calls, func() {
-			defer sem.Release(1)
-			defer wg.Done()
-			if ctx.Err() != nil {
-				return
-			}
 			if res := cr.Result(mc.Invoke(ctx)); res != nil {
 				out <- res
+				return
 			} // discard result if CallRequest.Result returns nil
 		})
 	}
-	for _, call := range calls { // start as much calls as semaphore permits
-		if err := ctx.Err(); err != nil {
-			ep.codec.EncodeError(w, ctx.Err())
-			return
-		}
-		if err := sem.Acquire(ctx, 1); err != nil {
-			ep.codec.EncodeError(w, err)
-			return
-		}
-		wg.Add(1)
-		go call()
-	}
-	go func() { // call handling completion waiter
-		defer close(out)
-		wg.Wait()
-	}()
-	select {
-	case <-ctx.Done():
-		ep.codec.EncodeError(w, ctx.Err())
+	e := ep.sched.Execute(ctx, calls)
+	close(out) // stop collector
+	<-done     // wait for it to complete
+	if e != nil || ctx.Err() != nil {
+		ep.codec.EncodeError(w, e)
 		return
-	case <-done:
-		break
 	}
 	ep.codec.EncodeResults(w, results...)
 }
