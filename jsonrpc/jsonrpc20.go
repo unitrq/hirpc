@@ -29,10 +29,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/unitrq/hirpc"
 )
@@ -53,32 +51,12 @@ const (
 	// EServerErrorMax - Implementation-defined server error max code
 	EServerErrorMax = -32000
 
-	jsonContentType = "application/json; charset=utf-8"                                // Content-Type header value
-	maxBodySize     = 2 * 1024 * 1024                                                  // max allowed body size in bytes
-	charset         = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" // random string generator charset
+	jsonContentType = "application/json; charset=utf-8" // Content-Type header value
+	maxBodySize     = 2 * 1024 * 1024                   // max allowed body size in bytes
 )
-
-// random string generator - used to regenerate missing or repeated call ids
-type rndc struct {
-	charset string
-	len     int
-	sr      *rand.Rand
-}
-
-// preseed random string generator
-var srnd = &rndc{charset, len(charset), rand.New(rand.NewSource(time.Now().UnixNano()))}
 
 // DefaultCodec - default global codec instance
 var DefaultCodec = &Codec{}
-
-// new - generate new random string of given length from charset
-func (r *rndc) new(length int) string {
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = r.charset[r.sr.Intn(r.len)]
-	}
-	return string(b)
-}
 
 // Codec - JSON-RPC 2.0 compatible http request codec
 type Codec struct {
