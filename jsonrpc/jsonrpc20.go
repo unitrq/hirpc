@@ -116,16 +116,11 @@ func (r *Request) Payload(val interface{}) error {
 }
 
 // Result - decode parameter into value or return error
-func (r *Request) Result(v interface{}, err error) hirpc.CallResult {
+func (r *Request) Result(v interface{}, err error) interface{} {
 	if r.ID == nil {
 		return nil
 	}
 	return callResponse(r.ID, v, err)
-}
-
-// GetResult - get call result
-func (r *Response) GetResult() (v interface{}, err error) {
-	return r.Result, r.Error
 }
 
 // DecodeRequest - decodes POST request body into one or more JSON-RPC 2.0 method calls
@@ -169,7 +164,7 @@ func callResponse(id *json.RawMessage, res interface{}, err error) *Response {
 }
 
 // encodeResponse - encodes one CallResult into JSON-RPC 2.0 response
-func (c *Codec) encodeResponse(w http.ResponseWriter, result hirpc.CallResult) {
+func (c *Codec) encodeResponse(w http.ResponseWriter, result interface{}) {
 	w.Header().Set("Content-Type", jsonContentType)
 	w.WriteHeader(200)
 	if result == nil {
@@ -179,7 +174,7 @@ func (c *Codec) encodeResponse(w http.ResponseWriter, result hirpc.CallResult) {
 }
 
 // encodeResponses - encodes multiple CallResult's into JSON-RPC 2.0 response
-func (c *Codec) encodeResponses(w http.ResponseWriter, results []hirpc.CallResult) {
+func (c *Codec) encodeResponses(w http.ResponseWriter, results []interface{}) {
 	if len(results) < 2 {
 		for _, r := range results {
 			c.encodeResponse(w, r)
@@ -198,7 +193,7 @@ func (c *Codec) EncodeError(w http.ResponseWriter, err error) {
 }
 
 // EncodeResults - encode multiple call results into http response
-func (c *Codec) EncodeResults(w http.ResponseWriter, results ...hirpc.CallResult) {
+func (c *Codec) EncodeResults(w http.ResponseWriter, results ...interface{}) {
 	if len(results) == 1 {
 		c.encodeResponse(w, results[0])
 		return

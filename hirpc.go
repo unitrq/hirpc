@@ -48,20 +48,15 @@ type CallHandler func(context.Context) (interface{}, error)
 
 // CallRequest - HTTPCodec single method call request object
 type CallRequest interface {
-	Target() (string, string)             // decode call request target service and method name
-	Payload(interface{}) error            // decode call request parameter payload into specific type pointer
-	Result(interface{}, error) CallResult // construct result object specific for this request and protocol
-}
-
-// CallResult - HTTPCodec method call protocol response object
-type CallResult interface {
-	GetResult() (interface{}, error)
+	Target() (string, string)              // decode call request target service and method name
+	Payload(interface{}) error             // decode call request parameter payload into specific type pointer
+	Result(interface{}, error) interface{} // construct result object specific for this request and protocol
 }
 
 // HTTPCodec - translates single http request into set of method call requests and set of call results or error into http response
 type HTTPCodec interface {
 	EncodeError(http.ResponseWriter, error)             // send http response representing single error message
-	EncodeResults(http.ResponseWriter, ...CallResult)   // send http response representing one or more call results
+	EncodeResults(http.ResponseWriter, ...interface{})  // send http response representing one or more call results
 	DecodeRequest(*http.Request) ([]CallRequest, error) // read and close http request body and decode one or more method call requests to execute, return (nil, nil) if request is valid but no calls was decoded
 }
 
@@ -395,10 +390,10 @@ func (ep *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var (
 		l       = len(requests)
 		ctx     = r.Context()
-		calls   = make([]func(), 0, l)  // resolved method calls
-		out     = make(chan CallResult) // result collection channel
-		done    = make(chan struct{})   // closed when all results collected
-		results = make([]CallResult, 0, l)
+		calls   = make([]func(), 0, l)   // resolved method calls
+		out     = make(chan interface{}) // result collection channel
+		done    = make(chan struct{})    // closed when all results collected
+		results = make([]interface{}, 0, l)
 	)
 	go func() { // start results collector to allow pushing dispatch errors early
 		defer close(done)
