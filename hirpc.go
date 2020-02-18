@@ -281,8 +281,10 @@ func (ep *Endpoint) resolve(service, method string) (*ServiceHandler, *MethodHan
 	return sh, mh, nil
 }
 
-// dispatch - resolve service and method name and construct method call handler
-func (ep *Endpoint) dispatch(cr CallRequest) (CallHandler, error) {
+// Dispatch - resolve call request into CallHandler
+func (ep *Endpoint) Dispatch(cr CallRequest) (CallHandler, error) {
+	ep.mx.RLock()
+	defer ep.mx.RUnlock()
 	service, method := cr.Target()
 	sh, mh, err := ep.resolve(service, method)
 	if err != nil {
@@ -319,13 +321,6 @@ func (ep *Endpoint) dispatch(cr CallRequest) (CallHandler, error) {
 		handler = mw(cc, handler)
 	}
 	return handler, nil
-}
-
-// Dispatch - resolve call request into CallHandler
-func (ep *Endpoint) Dispatch(cr CallRequest) (CallHandler, error) {
-	ep.mx.RLock()
-	defer ep.mx.RUnlock()
-	return ep.dispatch(cr)
 }
 
 // newMethodHandler - creates new handler if method signature matches requirements, else returns nil
