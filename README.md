@@ -76,10 +76,17 @@ Package provides `SequentialScheduler` implementation to execute multiple method
 
 *Shared state access within handler methods implementation is subject to proper synchronization by user, since multiple instances of multiple method calls could be running concurrently.*
 
-`NewEndpoint`, `Endpoint.Use`, `Endpoint.Register` and `Endpoint.Root` functions accept variadic list of functions with `func(*MethodCall, CallHandler) CallHandler` signature used as middleware constructors applied to prepared method call context when handler execution is about to start.
+`NewEndpoint`, `Endpoint.Use`, `Endpoint.Register` and `Endpoint.Root` functions accept variadic list of functions with
+```go
+func(*MethodCall, CallHandler) CallHandler
+```
+signature used as middleware constructors applied to prepared method call context when handler execution is about to start.
 When call handling starts, functions invoked in order of appearance, endpoint middleware invoked first.
 
-`CallHandler` type represents execution of single method call with specific input and output parameter values defined like this: `type CallHandler func(context.Context) (interface{}, error)`.
+`CallHandler` type represents execution of single method call with specific input and output parameter values defined like this:
+```go
+type CallHandler func(context.Context) (interface{}, error)
+```
 
 `Endpoint.Dispatch` finds requested method reflected handler and construct execution context in `MethodCall` instance, `CallHandler` value resolved by `Endpoint.Dispatch` is `Invoke` method of `MethodCall`.
 `MethodCall` object captures call dispatch context and list of middleware wrappers applied to this call, exposing service and method metadata introspected by `reflect` package to user middleware.
