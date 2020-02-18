@@ -63,12 +63,16 @@ http://localhost:8000/
 func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 ``` 
 are treated as exported RPC handlers and registered as methods of this service. Parameter names as well as any other methods and properties are ignored.
+
 In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concurrently or sequentially.
 `Endpoint` starts by decoding request body into set of `CallRequest` objects using `HTTPCodec.DecodeRequest` implementation.
+
 `CallRequest` tells `Endpoint` which method of which service caller is looking for, provides method to decode raw parameter data into pointer to specific type instance and constructor for protocol-level response object.
 Decoded `CallRequest` objects get resolved against service registry using `Dispatch` method described below.
+
 Then `Endpoint` schedules successfully resolved calls for background execution using `CallScheduler` instance, awaits results and pass them to `HTTPCodec.EncodeResults` to construct complete http response.
-Package provides `SequentialScheduler` implementation to execute multiple method calls in sequential order and `ConcurrentScheduler` for semaphore-bounded concurrent execution of multiple handlers.
+
+Package provides `SequentialScheduler` implementation to execute multiple method calls in sequential order and `ConcurrentScheduler` for semaphore-bounded concurrent execution of multiple handlers within request.
 
 *Shared state access within handler methods implementation is subject to proper synchronization by user, since multiple instances of multiple method calls could be running concurrently.*
 
