@@ -53,7 +53,7 @@ type CallRequest interface {
 	Result(interface{}, error) interface{} // construct result object specific for this request and protocol
 }
 
-// HTTPCodec - translates single http request into set of method call requests and set of call results or error into http response
+// HTTPCodec - request adapter interface implementing protocol validation and data (de-)serialization
 type HTTPCodec interface {
 	EncodeError(http.ResponseWriter, error)             // send http response representing single error message
 	EncodeResults(http.ResponseWriter, ...interface{})  // send http response representing one or more call results
@@ -391,6 +391,10 @@ func (ep *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requests, err := ep.codec.DecodeRequest(r)
 	if err != nil {
 		ep.codec.EncodeError(w, err)
+		return
+	}
+	if requests == nil {
+		ep.codec.EncodeResults(w)
 		return
 	}
 	var (

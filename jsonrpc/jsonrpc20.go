@@ -142,7 +142,11 @@ func (c *Codec) DecodeRequest(r *http.Request) ([]hirpc.CallRequest, error) {
 		}
 		return []hirpc.CallRequest{call}, nil
 	}
-	calls := make([]hirpc.CallRequest, len(requests))
+	l := len(requests)
+	if l == 0 {
+		return nil, nil
+	}
+	calls := make([]hirpc.CallRequest, l)
 	for i, r := range requests {
 		calls[i] = r
 	}
