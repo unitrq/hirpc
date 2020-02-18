@@ -145,7 +145,7 @@ func (c *Codec) DecodeRequest(r *http.Request) ([]hirpc.CallRequest, error) {
 		if err := json.Unmarshal(body, call); err != nil {
 			return nil, NewError(EParseError, err)
 		}
-		requests = append(requests, call)
+		return []hirpc.CallRequest{call}, nil
 	}
 	calls := make([]hirpc.CallRequest, len(requests))
 	for i, r := range requests {
