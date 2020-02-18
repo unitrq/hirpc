@@ -74,36 +74,32 @@ type MethodHandler struct {
 
 // ServiceHandler - stores service instance, type, service-level middleware and method handlers collection.
 type ServiceHandler struct {
-	Name     string                                       // name used to reference service in registry namespace
-	Methods  map[string]*MethodHandler                    // descriptors for methods with RPC handler compatible signature
-	Inst     reflect.Value                                // pointer to service instance
-	InstType reflect.Type                                 // type of service instance
-	mw       []func(*MethodCall, CallHandler) CallHandler // service-specific call handlers
+	Name     string                                        // name used to reference service in registry namespace
+	Methods  map[string]*MethodHandler                     // descriptors for methods with RPC handler compatible signature
+	Inst     reflect.Value                                 // pointer to service instance
+	InstType reflect.Type                                  // type of service instance
+	mw       []func(*CallContext, CallHandler) CallHandler // service-specific call handlers
 }
 
-// MethodCall - captures context of single method call.
-// Stores all objects required to invoke function reference produced by reflect package.
-// Instead of executing dispatched request directly, Endpoint returns this frozen state object
-// to allow calling side to precisely schedule execution of every single method call.
-// This allows calling side to enforce required call execution scheduling policies for example to allow batching multiple
-// method calls into single request/response roundtrip.
-type MethodCall struct {
-	Request CallRequest                                  // dispatch source provided by codec, used to construct codec response for this call
-	SH      *ServiceHandler                              // service owning target method
-	MH      *MethodHandler                               // target method handler
-	Param   reflect.Value                                // deserialized parameter
-	Result  reflect.Value                                // allocated result container
-	mw      []func(*MethodCall, CallHandler) CallHandler // middlewares applied to this call
+// CallContext - method call dispatch context
+// Captures information passed by Endpoint into user middleware applied to handler
+// Exposes source call request protocol object and handler method information
+type CallContext struct {
+	Request CallRequest   // dispatch source provided by codec, used to construct codec response for this call
+	Service string        // target service name
+	Method  string        // target method name
+	Param   reflect.Value // deserialized parameter
+	Result  reflect.Value // allocated result container
 }
 
 // Endpoint - RPC service registry
 type Endpoint struct {
-	mx       sync.RWMutex                                 // used for synchronized service (de-)registration and lookup
-	services map[string]*ServiceHandler                   // registered services
-	mw       []func(*MethodCall, CallHandler) CallHandler // globally applied middleware
-	root     *ServiceHandler                              // this service is exposed as namespace root when dispatching method call if set (when service name == "")
-	codec    HTTPCodec                                    // transport protocol request and response codec
-	sched    CallScheduler                                // request call execution scheduler
+	mx       sync.RWMutex                                  // used for synchronized service (de-)registration and lookup
+	services map[string]*ServiceHandler                    // registered services
+	mw       []func(*CallContext, CallHandler) CallHandler // globally applied middleware
+	root     *ServiceHandler                               // this service is exposed as namespace root when dispatching method call if set (when service name == "")
+	codec    HTTPCodec                                     // transport protocol request and response codec
+	sched    CallScheduler                                 // request call execution scheduler
 }
 
 // SequentialScheduler - sequential execution call scheduler
@@ -155,29 +151,6 @@ func (cs *ConcurrentScheduler) Execute(ctx context.Context, handlers []func()) e
 	return nil
 }
 
-// invoke - invokes actual target method using call context
-func (call *MethodCall) invoke(ctx context.Context) (interface{}, error) {
-	errVal := call.MH.Meth.Func.Call([]reflect.Value{
-		call.SH.Inst,
-		reflect.ValueOf(ctx),
-		call.Param,
-		call.Result,
-	})
-	if eIf := errVal[0].Interface(); eIf != nil {
-		return nil, eIf.(error)
-	}
-	return call.Result.Interface(), nil
-}
-
-// Invoke - block until target method returns
-func (call *MethodCall) Invoke(ctx context.Context) (interface{}, error) {
-	handler := call.invoke
-	for _, mw := range call.mw {
-		handler = mw(call, handler)
-	}
-	return handler(ctx)
-}
-
 // isCapitalized - returns true if string starts with uppercase
 func isCapitalized(s string) bool {
 	return s != "" && unicode.IsUpper(rune(s[0]))
@@ -192,7 +165,7 @@ func isExportedOrBuiltin(t reflect.Type) bool {
 }
 
 // NewEndpoint - create new RPC endpoint, returns nil if codec or sched is nil
-func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*MethodCall, CallHandler) CallHandler) *Endpoint {
+func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*CallContext, CallHandler) CallHandler) *Endpoint {
 	if codec == nil || sched == nil {
 		return nil
 	}
@@ -208,6 +181,16 @@ func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*MethodCall, C
 	return ep
 }
 
+// Service - get service handler by name if exist
+func (ep *Endpoint) Service(name string) (*ServiceHandler, bool) {
+	ep.mx.RLock()
+	defer ep.mx.RUnlock()
+	if s, ok := ep.services[name]; ok {
+		return s, true
+	}
+	return nil, false
+}
+
 // Services - get service map copy
 func (ep *Endpoint) Services() map[string]*ServiceHandler {
 	ep.mx.RLock()
@@ -220,7 +203,7 @@ func (ep *Endpoint) Services() map[string]*ServiceHandler {
 }
 
 // Use - replace endpoint middleware list
-func (ep *Endpoint) Use(mw ...func(*MethodCall, CallHandler) CallHandler) {
+func (ep *Endpoint) Use(mw ...func(*CallContext, CallHandler) CallHandler) {
 	for left, right := 0, len(mw)-1; left < right; left, right = left+1, right-1 {
 		mw[left], mw[right] = mw[right], mw[left]
 	}
@@ -231,7 +214,7 @@ func (ep *Endpoint) Use(mw ...func(*MethodCall, CallHandler) CallHandler) {
 
 // Root - register RPC handler instance as namespace root
 // This service is used for method lookup when dispatched service name is empty
-func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*MethodCall, CallHandler) CallHandler) error {
+func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) error {
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
 	s, err := newServiceHandler("", inst, mw...)
@@ -246,7 +229,7 @@ func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*MethodCall, 
 // All exported instance methods matching following signature will be exposed for public access:
 // func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 // Registering service with empty name returns result of Endpoint.Root method
-func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*MethodCall, CallHandler) CallHandler) error {
+func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) error {
 	if name == "" {
 		return ep.Root(name, inst, mw...)
 	}
@@ -298,8 +281,8 @@ func (ep *Endpoint) resolve(service, method string) (*ServiceHandler, *MethodHan
 	return sh, mh, nil
 }
 
-// dispatch - resolve method handler and construct method call instance
-func (ep *Endpoint) dispatch(cr CallRequest) (*MethodCall, error) {
+// dispatch - resolve service and method name and construct method call handler
+func (ep *Endpoint) dispatch(cr CallRequest) (CallHandler, error) {
 	service, method := cr.Target()
 	sh, mh, err := ep.resolve(service, method)
 	if err != nil {
@@ -309,27 +292,40 @@ func (ep *Endpoint) dispatch(cr CallRequest) (*MethodCall, error) {
 	if err := cr.Payload(param.Interface()); err != nil {
 		return nil, err
 	}
-	mw := sh.mw[:]
+	result := reflect.New(mh.ResType)
+	mw := append([]func(*CallContext, CallHandler) CallHandler(nil), sh.mw...)
 	mw = append(mw, ep.mw...)
-	return &MethodCall{
+	fn := mh.Meth.Func
+	handler := func(ctx context.Context) (interface{}, error) {
+		errVal := fn.Call([]reflect.Value{
+			sh.Inst,
+			reflect.ValueOf(ctx),
+			param,
+			result,
+		})
+		if eIf := errVal[0].Interface(); eIf != nil {
+			return nil, eIf.(error)
+		}
+		return result.Interface(), nil
+	}
+	cc := &CallContext{
 		Request: cr,
 		Param:   param,
-		Result:  reflect.New(mh.ResType),
-		SH:      sh,
-		MH:      mh,
-		mw:      mw,
-	}, nil
+		Result:  result,
+		Service: service,
+		Method:  method,
+	}
+	for _, mw := range mw {
+		handler = mw(cc, handler)
+	}
+	return handler, nil
 }
 
-// Dispatch - resolve request into MethodCall
+// Dispatch - resolve call request into CallHandler
 func (ep *Endpoint) Dispatch(cr CallRequest) (CallHandler, error) {
 	ep.mx.RLock()
 	defer ep.mx.RUnlock()
-	mc, err := ep.dispatch(cr)
-	if err != nil {
-		return nil, err
-	}
-	return mc.Invoke, nil
+	return ep.dispatch(cr)
 }
 
 // newMethodHandler - creates new handler if method signature matches requirements, else returns nil
@@ -363,7 +359,7 @@ func newMethodHandler(meth reflect.Method) *MethodHandler {
 }
 
 // newServiceHandler - detect and register handler methods in service instance
-func newServiceHandler(name string, inst interface{}, mw ...func(*MethodCall, CallHandler) CallHandler) (*ServiceHandler, error) {
+func newServiceHandler(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) (*ServiceHandler, error) {
 	// reverse middleware order
 	for left, right := 0, len(mw)-1; left < right; left, right = left+1, right-1 {
 		mw[left], mw[right] = mw[right], mw[left]

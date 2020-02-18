@@ -62,7 +62,7 @@ http://localhost:8000/
 ```go
 func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 ``` 
-are treated as exported RPC handlers and registered as methods of this service. Parameter names as well as any other methods and properties are ignored.
+are treated as exported RPC handlers and registered as methods of this service. Input and output parameter types should be pointers to the types (de-)serializable by used protocol codec. All other methods and properties are ignored.
 
 In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concurrently or sequentially.
 `Endpoint` starts by decoding request body into set of `CallRequest` objects using `HTTPCodec.DecodeRequest` implementation.
@@ -78,7 +78,7 @@ Package provides `SequentialScheduler` implementation to execute multiple method
 
 `NewEndpoint`, `Endpoint.Use`, `Endpoint.Register` and `Endpoint.Root` functions accept variadic list of functions with
 ```go
-func(*MethodCall, CallHandler) CallHandler
+func(*CallContext, CallHandler) CallHandler
 ```
 signature used as middleware constructors applied to prepared method call context when handler execution is about to start.
 When call handling starts, functions invoked in order of appearance, endpoint middleware invoked first.
@@ -88,8 +88,8 @@ When call handling starts, functions invoked in order of appearance, endpoint mi
 type CallHandler func(context.Context) (interface{}, error)
 ```
 
-`Endpoint.Dispatch` finds requested method reflected handler and construct execution context in `MethodCall` instance, `CallHandler` value resolved by `Endpoint.Dispatch` is `Invoke` method of `MethodCall`.
-`MethodCall` object captures call dispatch context and list of middleware wrappers applied to this call, exposing service and method metadata introspected by `reflect` package to user middleware.
+`Endpoint.Dispatch` looks up requested method reflected function and constructs handling function capturing allocated input and output parameter instances, wrapping it into middleware chain if necessary.
+`CallContext` object provides access to service and method names, parameter values and `CallRequest` instance used to dispatch this call to user middleware.
 
 `NewEndpoint` and `Endpoint.Use` register endpoint-level middleware applied to every method call of every service, while `Endpoint.Register` and `Endpoint.Root` register service-level middleware applied only to methods of one specific service.
 `Endpoint` public methods are synchronized using `sync.RWMutex` so it's safe to `Register` and `Unregister` services at runtime.
