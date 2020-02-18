@@ -66,11 +66,11 @@ are treated as exported RPC handlers and registered as methods of this service. 
 In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concurrently or sequentially.
 
 `Endpoint` starts by decoding request body into set of `CallRequest` objects using `HTTPCodec.DecodeRequest` implementation.
-
 `CallRequest` tells `Endpoint` which method of which service caller is looking for, provides method to decode raw parameter data into pointer to specific type instance and constructor for protocol-level response object.
-Decoded `CallRequest` objects get resolved against service registry using `Dispatch` method described below.
 
-Then `Endpoint` schedules successfully resolved calls for background execution using `CallScheduler` instance, awaits results and pass them to `HTTPCodec.EncodeResults` to construct complete http response.
+Decoded `CallRequest` objects get resolved against service registry by `Dispatch` method using service and method names and parameter payload callback. Dispatch failures and parameter deserialization errors treated the same way as handler returning error.
+
+Then `Endpoint` schedules successfully resolved calls for background execution using `CallScheduler` instance and wraps results using `CallRequest.Result` response constructor to construct complete http response with `HTTPCodec.EncodeResults`.
 
 Package provides `SequentialScheduler` implementation to execute multiple method calls in sequential order and `ConcurrentScheduler` for semaphore-bounded concurrent execution of multiple handlers within request.
 
@@ -88,8 +88,8 @@ When call handling starts, functions invoked in order of appearance, endpoint mi
 type CallHandler func(context.Context) (interface{}, error)
 ```
 
-`Endpoint.Dispatch` looks up requested method reflected function and constructs handling function capturing allocated input and output parameter instances, wrapping it into middleware chain if necessary.
-`CallContext` object provides access to service and method names, parameter values and `CallRequest` instance used to dispatch this call to user middleware.
+`Endpoint.Dispatch` looks up requested method, allocates new value of input type and tries to decode payload into receiver. If deserialization succeeds, it constructs `CallHandler` capturing allocated input and output parameter instances in closure, wrapping it into middleware chain if necessary.
+`CallContext` object provides access to service and method names, allocated parameter values and `CallRequest` instance to user middleware.
 
 `NewEndpoint` and `Endpoint.Use` register endpoint-level middleware applied to every method call of every service, while `Endpoint.Register` and `Endpoint.Root` register service-level middleware applied only to methods of one specific service.
 `Endpoint` public methods are synchronized using `sync.RWMutex` so it's safe to `Register` and `Unregister` services at runtime.
