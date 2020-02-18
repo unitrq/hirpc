@@ -79,7 +79,7 @@ Then `Endpoint` schedules successfully resolved calls for background execution u
 
 Package provides `SequentialScheduler` implementation to execute multiple method calls in sequential order and `ConcurrentScheduler` for semaphore-bounded concurrent execution of multiple handlers within request.
 
-*Shared state access within handler methods implementation is subject to proper synchronization by user, since multiple instances of multiple method calls could be running concurrently.*
+*Shared state access within handler methods is subject to proper synchronization by user, since multiple instances of multiple method calls could be running concurrently.*
 
 ### Middleware
 `NewEndpoint`, `Endpoint.Use`, `Endpoint.Register` and `Endpoint.Root` functions accept variadic list of functions with
