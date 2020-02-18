@@ -198,7 +198,7 @@ func (c *Codec) EncodeError(w http.ResponseWriter, err error) {
 
 // EncodeResults - encode multiple call results into http response
 func (c *Codec) EncodeResults(w http.ResponseWriter, results ...interface{}) {
-	if len(results) == 1 {
+	if len(results) < 2 {
 		c.encodeResponse(w, results[0])
 		return
 	}
