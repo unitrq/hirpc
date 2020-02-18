@@ -205,7 +205,7 @@ func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*MethodCall, C
 		services: make(map[string]*ServiceHandler),
 		codec:    codec,
 		sched:    sched,
-		mw:       mw[:],
+		mw:       mw,
 	}
 	return ep
 }
