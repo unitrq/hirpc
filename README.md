@@ -62,7 +62,7 @@ http://localhost:8000/
 ```go
 func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 ``` 
-are treated as exported RPC handlers and registered as methods of this service. Input and output parameter types should be pointers to the types (de-)serializable by used protocol codec. All other methods and properties are ignored.
+are treated as exported RPC handlers and registered as methods of this service. Input and output parameters should be pointers to the types used protocol codec can (de)serialize. All other methods and properties are ignored.
 
 In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concurrently or sequentially.
 `Endpoint` starts by decoding request body into set of `CallRequest` objects using `HTTPCodec.DecodeRequest` implementation.
