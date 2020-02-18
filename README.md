@@ -58,18 +58,30 @@ http://localhost:8000/
 
 ```
 # Description
-`Endpoint` maintains metadata collection for set of service instances and their methods collected using `reflect` package when user registers new service instance. All struct methods matching signature pattern of 
+`Endpoint` maintains metadata collection for set of service instances and their methods collected using `reflect` package when user registers new service instance with `Endpoint.Register` method. All struct methods matching signature pattern of 
 ```go
 func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 ``` 
 are treated as exported RPC handlers and registered as methods of this service. Parameter names as well as any other methods and properties are ignored.
-In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concurrently or sequentially. `Endpoint` starts by decoding request body into set of `CallRequest` objects using `HTTPCodec.DecodeRequest` implementation. `CallRequest` tells `Endpoint` which method of which service caller is looking for, provides method to decode raw parameter data into pointer to specific type instance and constructor for protocol-level response object. Then `Endpoint` schedules successfully resolved calls for background execution using `CallScheduler` instance, awaits results and pass them to `HTTPCodec` as a collection of `CallResult` objects used to construct complete http response.
+In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concurrently or sequentially.
+`Endpoint` starts by decoding request body into set of `CallRequest` objects using `HTTPCodec.DecodeRequest` implementation.
+`CallRequest` tells `Endpoint` which method of which service caller is looking for, provides method to decode raw parameter data into pointer to specific type instance and constructor for protocol-level response object.
+Decoded `CallRequest` objects get resolved against service registry using `Dispatch` method described below.
+Then `Endpoint` schedules successfully resolved calls for background execution using `CallScheduler` instance, awaits results and pass them to `HTTPCodec.EncodeResults` to construct complete http response.
 Package provides `SequentialScheduler` implementation to execute multiple method calls in sequential order and `ConcurrentScheduler` for semaphore-bounded concurrent execution of multiple handlers.
 
 *Shared state access within handler methods implementation is subject to proper synchronization by user, since multiple instances of multiple method calls could be running concurrently.*
 
+`NewEndpoint`, `Endpoint.Use`, `Endpoint.Register` and `Endpoint.Root` functions accept variadic list of functions with `func(*MethodCall, CallHandler) CallHandler` signature used as middleware constructors applied to prepared method call context when handler execution is about to start.
+When call handling starts, functions invoked in order of appearance, endpoint middleware invoked first.
+
+`CallHandler` type represents execution of single method call with specific input and output parameter values defined like this: `type CallHandler func(context.Context) (interface{}, error)`.
+
+`Endpoint.Dispatch` finds requested method reflected handler and construct execution context in `MethodCall` instance, `CallHandler` value resolved by `Endpoint.Dispatch` is `Invoke` method of `MethodCall`.
+`MethodCall` object captures call dispatch context and list of middleware wrappers applied to this call, exposing service and method metadata introspected by `reflect` package to user middleware.
+
+`NewEndpoint` and `Endpoint.Use` register endpoint-level middleware applied to every method call of every service, while `Endpoint.Register` and `Endpoint.Root` register service-level middleware applied only to methods of one specific service.
 `Endpoint` public methods are synchronized using `sync.RWMutex` so it's safe to `Register` and `Unregister` services at runtime.
-`NewEndpoint`, `Endpoint.Register` and `Endpoint.Root` functions accept variadic list of function parameters acting as simple middleware stack endpoint-wise and service-wise respectively. Middleware function should match `func(*MethodCall, CallHandler) CallHandler` signature and is applied in reverse order of appearance when resolved method call gets actually invoked. `CallHandler` is a function type defined like this: `type CallHandler func(context.Context) (interface{}, error)`
 
 Service registered with empty name or using `Endpoint.Root` method is a namespace root service, `Endpoint` dispatches calls with empty service name to namespace root if it's not nil. Registering new service under same name discards previously registered instance.
 
@@ -81,10 +93,8 @@ Service registered with empty name or using `Endpoint.Root` method is a namespac
 # Known limitations and bugs
 The only implemented `HTTPCodec` is currently a JSON-RPC 2.0 compatible codec in `jsonrpc` subpackage.
 Method specifier resolved into service and method name accordingly by attempting to left split it once with "." separator.
-If split fails empty string resolved as service name and original method specifier as method name attempting lookup on `Endpoint` namespace root.
+If split fails empty string resolved as service name and original method specifier as method name attempting lookup method on `Endpoint` namespace root service.
 
 It does not implement any `rpc` namespace introspection (but probably could).
 
 Maximum allowed request body size is set to 2097152 bytes by `maxBodySize` constant in codec source.
-
-`CallResult` interface doesn't really do anything useful and its method is not called anywhere. It is only used to identify protocol codec response objects produced by corresponding request objects, allowing codec implementation to match each call result to call request in a protocol-specific way when constructing response.

@@ -196,6 +196,9 @@ func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*MethodCall, C
 	if codec == nil || sched == nil {
 		return nil
 	}
+	for left, right := 0, len(mw)-1; left < right; left, right = left+1, right-1 {
+		mw[left], mw[right] = mw[right], mw[left]
+	}
 	ep := &Endpoint{
 		services: make(map[string]*ServiceHandler),
 		codec:    codec,
@@ -216,11 +219,14 @@ func (ep *Endpoint) Services() map[string]*ServiceHandler {
 	return services
 }
 
-// Use - append new middlewares to global middleware list
+// Use - replace endpoint middleware list
 func (ep *Endpoint) Use(mw ...func(*MethodCall, CallHandler) CallHandler) {
+	for left, right := 0, len(mw)-1; left < right; left, right = left+1, right-1 {
+		mw[left], mw[right] = mw[right], mw[left]
+	}
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
-	ep.mw = append(ep.mw, mw...)
+	ep.mw = mw
 }
 
 // Root - register RPC handler instance as namespace root
@@ -303,8 +309,8 @@ func (ep *Endpoint) dispatch(cr CallRequest) (*MethodCall, error) {
 	if err := cr.Payload(param.Interface()); err != nil {
 		return nil, err
 	}
-	mw := ep.mw[:]
-	mw = append(mw, sh.mw...)
+	mw := sh.mw[:]
+	mw = append(mw, ep.mw...)
 	return &MethodCall{
 		Request: cr,
 		Param:   param,
@@ -358,6 +364,10 @@ func newMethodHandler(meth reflect.Method) *MethodHandler {
 
 // newServiceHandler - detect and register handler methods in service instance
 func newServiceHandler(name string, inst interface{}, mw ...func(*MethodCall, CallHandler) CallHandler) (*ServiceHandler, error) {
+	// reverse middleware order
+	for left, right := 0, len(mw)-1; left < right; left, right = left+1, right-1 {
+		mw[left], mw[right] = mw[right], mw[left]
+	}
 	s := &ServiceHandler{
 		Name:     name,
 		Inst:     reflect.ValueOf(inst),
