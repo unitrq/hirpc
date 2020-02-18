@@ -321,10 +321,14 @@ func (ep *Endpoint) dispatch(cr CallRequest) (*MethodCall, error) {
 }
 
 // Dispatch - resolve request into MethodCall
-func (ep *Endpoint) Dispatch(cr CallRequest) (*MethodCall, error) {
+func (ep *Endpoint) Dispatch(cr CallRequest) (CallHandler, error) {
 	ep.mx.RLock()
 	defer ep.mx.RUnlock()
-	return ep.dispatch(cr)
+	mc, err := ep.dispatch(cr)
+	if err != nil {
+		return nil, err
+	}
+	return mc.Invoke, nil
 }
 
 // newMethodHandler - creates new handler if method signature matches requirements, else returns nil
@@ -403,13 +407,13 @@ func (ep *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	for _, cr := range requests { // dispatch call requests and create semaphore gated closures
-		mc, err := ep.Dispatch(cr)
+		call, err := ep.Dispatch(cr)
 		if err != nil {
 			out <- cr.Result(nil, err)
 			continue
 		}
-		calls = append(calls, func() {
-			if res := cr.Result(mc.Invoke(ctx)); res != nil {
+		calls = append(calls, func() { // wrap call result into protocol response
+			if res := cr.Result(call(ctx)); res != nil {
 				out <- res
 			} // discard result if CallRequest.Result returns nil
 		})
