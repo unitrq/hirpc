@@ -308,13 +308,15 @@ func (ep *Endpoint) dispatch(cr CallRequest) (*MethodCall, error) {
 	if err := cr.Payload(param.Interface()); err != nil {
 		return nil, err
 	}
+	mw := ep.mw[:]
+	mw = append(mw, sh.mw...)
 	return &MethodCall{
 		Request: cr,
 		Param:   param,
 		Result:  reflect.New(mh.ResType),
 		SH:      sh,
 		MH:      mh,
-		mw:      ep.mw,
+		mw:      mw,
 	}, nil
 }
 
