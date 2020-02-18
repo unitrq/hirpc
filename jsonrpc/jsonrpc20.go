@@ -85,6 +85,20 @@ type Error struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
+// callResponse - call response constructor
+func callResponse(id *json.RawMessage, res interface{}, err error) *Response {
+	response := &Response{
+		ID:      id,
+		Version: "2.0",
+	}
+	if err == nil {
+		response.Result = res
+	} else {
+		response.Error = NewError(EServerErrorMax, err)
+	}
+	return response
+}
+
 // NewError - new JSON-RPC error value constructor
 func NewError(code int, err error) *Error {
 	if e, ok := err.(*Error); ok {
@@ -153,54 +167,25 @@ func (c *Codec) DecodeRequest(r *http.Request) ([]hirpc.CallRequest, error) {
 	return calls, nil
 }
 
-// callResponse - call response constructor
-func callResponse(id *json.RawMessage, res interface{}, err error) *Response {
-	response := &Response{
-		ID:      id,
-		Version: "2.0",
-	}
-	if err == nil {
-		response.Result = res
-	} else {
-		response.Error = NewError(EServerErrorMax, err)
-	}
-	return response
-}
-
-// encodeResponse - encodes one CallResult into JSON-RPC 2.0 response
-func (c *Codec) encodeResponse(w http.ResponseWriter, result interface{}) {
-	w.Header().Set("Content-Type", jsonContentType)
-	w.WriteHeader(200)
-	if result == nil {
-		return
-	}
-	json.NewEncoder(w).Encode(result)
-}
-
-// encodeResponses - encodes multiple CallResult's into JSON-RPC 2.0 response
-func (c *Codec) encodeResponses(w http.ResponseWriter, results []interface{}) {
-	if len(results) < 2 {
-		for _, r := range results {
-			c.encodeResponse(w, r)
-		}
-		return
-	}
+// EncodeError - encode error message into http response
+func (c *Codec) EncodeError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", jsonContentType)
 	w.WriteHeader(200)
 	enc := json.NewEncoder(w)
-	enc.Encode(results)
-}
-
-// EncodeError - encode error message into http response
-func (c *Codec) EncodeError(w http.ResponseWriter, err error) {
-	c.encodeResponse(w, callResponse(nil, nil, err))
+	enc.Encode(callResponse(nil, nil, err))
 }
 
 // EncodeResults - encode multiple call results into http response
 func (c *Codec) EncodeResults(w http.ResponseWriter, results ...interface{}) {
-	if len(results) == 1 {
-		c.encodeResponse(w, results[0])
-		return
+	w.Header().Set("Content-Type", jsonContentType)
+	w.WriteHeader(200)
+	enc := json.NewEncoder(w)
+	switch len(results) {
+	case 0:
+		break
+	case 1:
+		enc.Encode(results[0])
+	default:
+		enc.Encode(results)
 	}
-	c.encodeResponses(w, results)
 }
