@@ -63,7 +63,9 @@ http://localhost:8000/
 func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 ``` 
 are treated as exported RPC handlers and registered as methods of this service. Input and output parameters should be pointers to the types used protocol codec can (de)serialize. All other methods and properties are ignored.
+
 Service registered with empty name or using `Endpoint.Root` method is a namespace root service, `Endpoint` uses it to handle method calls with empty service name if set. Registering new service under same name discards previously registered instance.
+
 `Endpoint` public methods are synchronized using `sync.RWMutex` so it's safe to `Register` and `Unregister` services at runtime.
 
 ### HTTP request handling
