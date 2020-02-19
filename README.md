@@ -1,5 +1,8 @@
 # hirpc - dynamic RPC service dispatcher for net/http handler interface
 Package hirpc provide `Endpoint` type - simple dynamic dispatch service registry for user defined structs. Most of it was inspired by [github.com/gorilla/rpc](https://github.com/gorilla/rpc). It allows user to expose exported struct methods matching specific signature pattern as a set of named RPC services using standard library net/http request handler interface and specific protocol codec adapter.
+
+Key differences from `gorilla/rpc`, `net/rpc` and other implementations are compact implementation with minimal api and middleware interface modeled after `net/http` api but exposing method call context to user callbacks. This allows users to implement constraining patterns like rate-limiting or per-service and per-method access authorization in simple declarative manner.
+
 # Usage
 Define handler service and parameter types
 ```go
