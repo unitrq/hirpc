@@ -51,15 +51,17 @@ const (
 	// EServerErrorMax - Implementation-defined server error max code
 	EServerErrorMax = -32000
 
-	jsonContentType = "application/json; charset=utf-8" // Content-Type header value
-	maxBodySize     = 2 * 1024 * 1024                   // max allowed body size in bytes
+	jsonContentType       = "application/json; charset=utf-8" // Content-Type header value
+	maxBodySize     int64 = 2 * 1024 * 1024                   // max allowed body size in bytes
 )
 
 // Codec - default global codec instance
 var Codec = &HTTPCodec{}
 
 // HTTPCodec - JSON-RPC 2.0 spec compliant codec for hirpc.Endpoint request handler
-type HTTPCodec struct{}
+type HTTPCodec struct {
+	maxBodySize uint
+}
 
 // Request - procedure call request object
 type Request struct {
@@ -141,7 +143,11 @@ func (c *HTTPCodec) DecodeRequest(r *http.Request) ([]hirpc.CallRequest, error) 
 	if r.Method != "POST" {
 		return nil, NewError(EInvalidRequest, fmt.Errorf("method not allowed"))
 	}
-	body, err := ioutil.ReadAll(io.LimitReader(r.Body, maxBodySize))
+	limit := maxBodySize
+	if c.maxBodySize > 0 {
+		limit = int64(c.maxBodySize)
+	}
+	body, err := ioutil.ReadAll(io.LimitReader(r.Body, limit))
 	r.Body.Close()
 	if err != nil {
 		return nil, NewError(EParseError, err)
