@@ -92,7 +92,8 @@ type CallContext struct {
 	Result  reflect.Value // allocated result container
 }
 
-// Endpoint - RPC service registry
+// Endpoint - net/http request handler and RPC service registry
+// Decodes http requests using HTTPCodec and schedules procedure calls for execution using CallScheduler
 type Endpoint struct {
 	mx       sync.RWMutex                                  // used for synchronized service (de-)registration and lookup
 	services map[string]*ServiceHandler                    // registered services
