@@ -15,21 +15,26 @@ type EchoService struct {
 	ops uint64
 }
 
-// Echo - Echo method parameter type
-type Echo struct {
-	Value string `json:"value"`
-}
-
-// Echo - RPC handler method
-func (es *EchoService) Echo(ctx context.Context, req *Echo, res *Echo) error {
-	defer atomic.AddUint64(&es.ops, 1)
-	res.Value = req.Value
-	return nil
-}
-
 // Count - Count method parameter type
 type Count struct {
 	Value uint64 `json:"value"`
+}
+
+// EchoRequest - Echo method input parameter type
+type EchoRequest struct {
+	Value string `json:"value"`
+}
+
+// EchoReply - Echo method output parameter type
+type EchoReply struct {
+	Echo string `json:"echo"`
+}
+
+// Echo - RPC handler method
+func (es *EchoService) Echo(ctx context.Context, req *EchoRequest, res *EchoReply) error {
+	atomic.AddUint64(&es.ops, 1)
+	res.Echo = req.Value
+	return nil
 }
 
 // Count - RPC handler method

@@ -4,14 +4,21 @@ Package hirpc provide `Endpoint` type - simple dynamic dispatch service registry
 Key differences from `gorilla/rpc`, `net/rpc` and other implementations are compact implementation with minimal api and middleware interface modeled after `net/http` api but exposing method call context to user callbacks. This allows users to implement constraining patterns like rate-limiting or per-service and per-method access authorization in simple declarative manner.
 
 # Usage
-Define handler service and parameter types
+### Simple JSON-RPC 2.0 server
+To build a simple Echo RPC service handler define handler service and parameter types
 ```go
 type EchoService struct {
 	ops uint64
 } 
 
-type Echo struct {
+// EchoRequest - Echo method input parameter type
+type EchoRequest struct {
 	Value string `json:"value"`
+}
+
+// EchoReply - Echo method output parameter type
+type EchoReply struct {
+	Echo string `json:"echo"`
 }
 
 type Count struct {
@@ -22,14 +29,14 @@ type Count struct {
 Define handler methods
 ```go
 
-func (es *EchoService) Echo(ctx context.Context, req *Echo, res *Echo) error {
+func (es *EchoService) Echo(ctx context.Context, req *EchoRequest, res *EchoReply) error {
 	defer atomic.AddUint64(&es.ops, 1)
 	res.Value = req.Value
 	return nil
 }
 
 func (es *EchoService) Count(ctx context.Context, _ *struct{}, res *Count) error {
-	defer atomic.AddUint64(&es.ops, 1)
+	atomic.AddUint64(&es.ops, 1)
 	res.Value = atomic.LoadUint64(&es.ops)
 	return nil
 }
@@ -40,7 +47,7 @@ Create `Endpoint` using `jsonrpc` protocol codec and start http server
 ```go
 func main() {
 	es := &EchoService{}
-	ep := hirpc.NewEndpoint(jsonrpc.DefaultCodec, hirpc.DefaultCallScheduler)
+	ep := hirpc.NewEndpoint(jsonrpc.Codec, hirpc.DefaultCallScheduler)
 	ep.Register("echo", es)
 	srv := &http.Server{
 		Addr:    ":8000",
@@ -60,6 +67,68 @@ http://localhost:8000/
 [{"id":"12345","jsonrpc":"2.0","result":{"value":"123"}},{"id":"23456","jsonrpc":"2.0","result":{"value":1}}]
 
 ```
+
+### More complex example using middleware
+To improve on previous example we'll add middleware to enforce validation of incoming parameter data before method call if parameter type implements specific interface.
+
+Add `Validator` interface and implement `Validate` method for `EchoRequest`
+```go
+// Validator - allows to validate underlying value
+type Validator interface {
+	Validate() error
+}
+
+// Validate - validate attribute values
+func (e *EchoRequest) Validate() error {
+	if len(e.Value) == 0 {
+		return fmt.Errorf("value attribute is required")
+	}
+	return nil
+}
+
+```
+Define middleware constructor
+```go
+// validator - constructs middleware that validates method input parameter if it implements Validator interface
+func validator(cc *hirpc.CallContext, h hirpc.CallHandler) hirpc.CallHandler {
+	return func(ctx context.Context) (interface{}, error) {
+		param := cc.Param.Interface()
+		if val, ok := param.(Validator); ok {
+			if err := val.Validate(); err != nil {
+				return nil, err
+			}
+		}
+		return h(ctx)
+	}
+}
+
+```
+Then pass middleware to endpoint or service
+```go
+
+func main() {
+	es := &EchoService{}
+	ep := hirpc.NewEndpoint(jsonrpc.Codec, hirpc.DefaultCallScheduler, validator)
+	ep.Register("echo", es)
+	srv := &http.Server{
+		Addr:    ":8000",
+		Handler: ep,
+	}
+	if err := srv.ListenAndServe(); err != nil {
+		log.Println(err)
+	}
+}
+
+```
+
+This way input data validation is enforced just by implementing `Validator` interface on specific type:
+```
+$ curl -H 'Content-Type: application/json;' \
+--data-binary '[{"jsonrpc":"2.0","id":"12345","method":"echo.Count","params": {}}, {"jsonrpc":"2.0","id":"23456","method":"echo.Echo","params": {"value": ""}}]' \
+http://localhost:8000/    
+[{"id":"23456","jsonrpc":"2.0","result":{"value":1}},{"id":"23456","jsonrpc":"2.0","error":{"code":-32000,"message":"value attribute is required"}}]                                                                                   
+```
+
 # Description
 `Endpoint` maintains metadata collection for set of service instances and their methods collected using `reflect` package when user registers new service instance with `Endpoint.Register` method. All struct methods matching signature pattern of 
 ```go
