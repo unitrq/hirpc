@@ -35,6 +35,9 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
+// DefaultConcurrencyLimit - default concurrency limit used by ConcurrentScheduler
+const DefaultConcurrencyLimit int64 = 3
+
 var (
 	// reflect.Type of Context and error
 	typeOfContext = reflect.TypeOf((*context.Context)(nil)).Elem()
@@ -109,7 +112,7 @@ type SequentialScheduler struct {
 
 // ConcurrentScheduler - concurrently executing call scheduler.
 type ConcurrentScheduler struct {
-	Limit int // concurrency limit per request
+	Limit uint // concurrency limit per request
 }
 
 // Execute - executes handlers in order of appearance.
@@ -126,11 +129,11 @@ func (ss *SequentialScheduler) Execute(ctx context.Context, handlers []func()) e
 // Execute - executes multiple handlers in background limiting concurrency by semaphore instance.
 func (cs *ConcurrentScheduler) Execute(ctx context.Context, handlers []func()) error {
 	var wg sync.WaitGroup
-	limit := cs.Limit
-	if limit < 1 {
-		limit = 1
+	limit := int64(cs.Limit)
+	if limit == 0 {
+		limit = DefaultConcurrencyLimit
 	}
-	sem := semaphore.NewWeighted(int64(limit))
+	sem := semaphore.NewWeighted(limit)
 	for _, h := range handlers {
 		if err := ctx.Err(); err != nil {
 			return err
