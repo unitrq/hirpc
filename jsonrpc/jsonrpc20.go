@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// jsonrpc - JSON-RPC 2.0 compatible codec for hirpc http request handler
+// jsonrpc - provides JSON-RPC 2.0 spec compliant codec for hirpc.Endpoint request handler
 
 package jsonrpc
 
@@ -55,12 +55,11 @@ const (
 	maxBodySize     = 2 * 1024 * 1024                   // max allowed body size in bytes
 )
 
-// DefaultCodec - default global codec instance
-var DefaultCodec = &Codec{}
+// Codec - default global codec instance
+var Codec = &HTTPCodec{}
 
-// Codec - JSON-RPC 2.0 compatible http request codec
-type Codec struct {
-}
+// HTTPCodec - JSON-RPC 2.0 spec compliant codec for hirpc.Endpoint request handler
+type HTTPCodec struct{}
 
 // Request - procedure call request object
 type Request struct {
@@ -85,7 +84,7 @@ type Error struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// callResponse - call response constructor
+// callResponse - create call response constructor using request id
 func callResponse(id *json.RawMessage, res interface{}, err error) *Response {
 	response := &Response{
 		ID:      id,
@@ -138,7 +137,7 @@ func (r *Request) Result(v interface{}, err error) interface{} {
 }
 
 // DecodeRequest - decodes POST request body into one or more JSON-RPC 2.0 method calls
-func (c *Codec) DecodeRequest(r *http.Request) ([]hirpc.CallRequest, error) {
+func (c *HTTPCodec) DecodeRequest(r *http.Request) ([]hirpc.CallRequest, error) {
 	if r.Method != "POST" {
 		return nil, NewError(EInvalidRequest, fmt.Errorf("method not allowed"))
 	}
@@ -168,7 +167,7 @@ func (c *Codec) DecodeRequest(r *http.Request) ([]hirpc.CallRequest, error) {
 }
 
 // EncodeError - encode error message into http response
-func (c *Codec) EncodeError(w http.ResponseWriter, err error) {
+func (c *HTTPCodec) EncodeError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", jsonContentType)
 	w.WriteHeader(200)
 	enc := json.NewEncoder(w)
@@ -176,7 +175,7 @@ func (c *Codec) EncodeError(w http.ResponseWriter, err error) {
 }
 
 // EncodeResults - encode multiple call results into http response
-func (c *Codec) EncodeResults(w http.ResponseWriter, results ...interface{}) {
+func (c *HTTPCodec) EncodeResults(w http.ResponseWriter, results ...interface{}) {
 	w.Header().Set("Content-Type", jsonContentType)
 	w.WriteHeader(200)
 	enc := json.NewEncoder(w)
