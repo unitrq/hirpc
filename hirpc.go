@@ -165,10 +165,13 @@ func isExportedOrBuiltin(t reflect.Type) bool {
 	return isCapitalized(t.Name()) || t.PkgPath() == ""
 }
 
-// NewEndpoint - creates new RPC endpoint, returns nil if codec or sched is nil, registers endpoint-level middleware if provided.
+// NewEndpoint - creates new RPC endpoint, returns nil if codec is nil, registers endpoint-level middleware if provided.
 func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*CallContext, CallHandler) CallHandler) *Endpoint {
-	if codec == nil || sched == nil {
+	if codec == nil {
 		return nil
+	}
+	if sched == nil {
+		sched = DefaultCallScheduler
 	}
 	for left, right := 0, len(mw)-1; left < right; left, right = left+1, right-1 {
 		mw[left], mw[right] = mw[right], mw[left]
