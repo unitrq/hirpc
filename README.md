@@ -184,11 +184,9 @@ type CallHandler func(context.Context) (interface{}, error)
 - Improve documentation
 - Find a way to generate handlers with go-swagger
 
-# Known limitations and bugs
+# Known limitations
 The only implemented `HTTPCodec` is currently a JSON-RPC 2.0 compatible codec in `jsonrpc` subpackage.
 Method specifier resolved into service and method name accordingly by attempting to left split it once with "." separator.
 If split fails empty string resolved as service name and original method specifier as method name attempting lookup method on `Endpoint` namespace root service.
 
 It does not implement any `rpc` namespace introspection (but probably could).
-
-Maximum allowed request body size is set to 2097152 bytes by `maxBodySize` constant in codec source.

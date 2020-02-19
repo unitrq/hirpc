@@ -21,6 +21,8 @@
 // SOFTWARE.
 
 // jsonrpc - provides JSON-RPC 2.0 spec compliant codec for hirpc.Endpoint request handler
+// Method specifier resolved into service and method name accordingly by attempting to left split it once with "." separator.
+// If split fails empty string resolved as service name and original method specifier as method name attempting lookup method on `Endpoint` namespace root service.
 
 package jsonrpc
 
@@ -60,7 +62,7 @@ var Codec = &HTTPCodec{}
 
 // HTTPCodec - JSON-RPC 2.0 spec compliant codec for hirpc.Endpoint request handler
 type HTTPCodec struct {
-	maxBodySize uint
+	MaxBodySize uint // overrides default body size limit
 }
 
 // Request - procedure call request object
@@ -143,9 +145,9 @@ func (c *HTTPCodec) DecodeRequest(r *http.Request) ([]hirpc.CallRequest, error) 
 	if r.Method != "POST" {
 		return nil, NewError(EInvalidRequest, fmt.Errorf("method not allowed"))
 	}
-	limit := maxBodySize
-	if c.maxBodySize > 0 {
-		limit = int64(c.maxBodySize)
+	limit := int64(c.MaxBodySize)
+	if limit == 0 {
+		limit = maxBodySize
 	}
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, limit))
 	r.Body.Close()
