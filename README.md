@@ -33,7 +33,7 @@ Define handler methods
 
 func (es *EchoService) Echo(ctx context.Context, req *EchoRequest, res *EchoReply) error {
 	defer atomic.AddUint64(&es.ops, 1)
-	res.Value = req.Value
+	res.Echo = req.Value
 	return nil
 }
 
