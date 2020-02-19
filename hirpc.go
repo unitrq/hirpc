@@ -221,22 +221,22 @@ func (ep *Endpoint) Use(mw ...func(*CallContext, CallHandler) CallHandler) {
 
 // Root - registers RPC handler instance as namespace root.
 // This service is used for method lookup when dispatched service name is empty.
-func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) error {
+func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) (*ServiceHandler, error) {
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
 	s, err := newServiceHandler("", inst, mw...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ep.root = s
-	return nil
+	return s, nil
 }
 
 // Register - registers RPC handler instance by service name.
 // All exported instance methods matching following signature will be exposed for public access:
 // func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
 // Registering service with empty name returns result of Endpoint.Root method.
-func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) error {
+func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) (*ServiceHandler, error) {
 	if name == "" {
 		return ep.Root(name, inst, mw...)
 	}
@@ -244,10 +244,10 @@ func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*CallCont
 	defer ep.mx.Unlock()
 	s, err := newServiceHandler(name, inst, mw...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ep.services[name] = s
-	return nil
+	return s, nil
 }
 
 // Unregister - remove service from endpoint.
