@@ -72,7 +72,7 @@ func validator(cc *hirpc.CallContext, h hirpc.CallHandler) hirpc.CallHandler {
 
 func main() {
 	es := &EchoService{}
-	ep := hirpc.NewEndpoint(jsonrpc.Codec, hirpc.DefaultCallScheduler, validator)
+	ep := hirpc.NewEndpoint(jsonrpc.Codec, nil, validator)
 	ep.Register("echo", es)
 	srv := &http.Server{
 		Addr:    ":8000",

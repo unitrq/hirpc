@@ -46,7 +46,7 @@ func (es *EchoService) Count(ctx context.Context, _ *struct{}, res *Count) error
 
 func main() {
 	es := &EchoService{}
-	ep := hirpc.NewEndpoint(jsonrpc.Codec, hirpc.DefaultCallScheduler)
+	ep := hirpc.NewEndpoint(jsonrpc.Codec, nil)
 	ep.Register("echo", es)
 	srv := &http.Server{
 		Addr:    ":8000",

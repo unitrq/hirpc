@@ -49,7 +49,7 @@ Create `Endpoint` using `jsonrpc` protocol codec and start http server
 ```go
 func main() {
 	es := &EchoService{}
-	ep := hirpc.NewEndpoint(jsonrpc.Codec, hirpc.DefaultCallScheduler)
+	ep := hirpc.NewEndpoint(jsonrpc.Codec, nil)
 	ep.Register("echo", es)
 	srv := &http.Server{
 		Addr:    ":8000",
@@ -113,7 +113,7 @@ Then pass middleware to endpoint or service
 ```go
 func main() {
 	es := &EchoService{}
-	ep := hirpc.NewEndpoint(jsonrpc.Codec, hirpc.DefaultCallScheduler, validator)
+	ep := hirpc.NewEndpoint(jsonrpc.Codec, nil, validator)
 	ep.Register("echo", es)
 	srv := &http.Server{
 		Addr:    ":8000",
@@ -135,7 +135,7 @@ http://localhost:8000/
 ```
 
 # Description
-`Endpoint` maintains metadata collection for set of service instances and their methods collected using `reflect` package when user registers new service instance with `Endpoint.Register` method. All struct methods matching signature pattern of 
+`Endpoint` is a simple HTTP handler dispatching RPC requests decoded by `HTTPCodec` to set of handler services defined by user defined struct object methods and encoding results into response using same codec. `Endpoint` stores service metadata collected using `reflect` package when user registers new object with `Endpoint.Register` method and uses it to find specific handler function and construct call context when handling request. All struct methods matching signature pattern of 
 
 ```go
 func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
@@ -148,7 +148,7 @@ Service registered with empty name or using `Endpoint.Root` method is a namespac
 `Endpoint` public methods are synchronized using `sync.RWMutex` so it's safe to `Register` and `Unregister` services at runtime.
 
 ### HTTP request handling
-In order to handle incoming http requests, `Endpoint` uses `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concurrently or sequentially.
+In order to handle incoming http requests, `Endpoint` requires `HTTPCodec` interface implementation to translate protocol data format into resolvable object and `CallScheduler` instance to invoke resolved method handlers concurrently or sequentially.
 
 `Endpoint` starts by decoding request body into set of `CallRequest` objects using `HTTPCodec.DecodeRequest` implementation. `CallRequest` tells `Endpoint` which method of which service caller is looking for, provides method to decode raw parameter data into pointer to specific type instance and constructor for protocol-level response object.
 
@@ -156,7 +156,7 @@ Decoded `CallRequest` objects get resolved against service registry by `Endpoint
 
 Then `Endpoint` schedules successfully resolved calls for background execution using `CallScheduler` instance and wraps results using `CallRequest.Result` response constructor to construct complete http response with `HTTPCodec.EncodeResults`.
 
-Package provides `SequentialScheduler` implementation to execute multiple method calls in sequential order and `ConcurrentScheduler` for semaphore-bounded concurrent execution of multiple handlers within request.
+Package provides `SequentialScheduler` implementation to execute multiple method calls in sequential order which is default and `ConcurrentScheduler` for semaphore-bounded concurrent execution of multiple handlers within request.
 
 *Shared state access within handler methods is subject to proper synchronization by user, since multiple instances of multiple method calls could be running concurrently.*
 
