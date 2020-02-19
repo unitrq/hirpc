@@ -84,7 +84,7 @@ type Error struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// callResponse - create call response constructor using request id
+// callResponse - creates protocol response object using request id
 func callResponse(id *json.RawMessage, res interface{}, err error) *Response {
 	response := &Response{
 		ID:      id,
@@ -98,7 +98,7 @@ func callResponse(id *json.RawMessage, res interface{}, err error) *Response {
 	return response
 }
 
-// NewError - new JSON-RPC error value constructor
+// NewError - wraps generic error into JSON-RPC 2.0 protocol error value
 func NewError(code int, err error) *Error {
 	if e, ok := err.(*Error); ok {
 		return e
@@ -114,7 +114,7 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
-// Target - return service and method names respectively
+// Target - returns service and method names respectively
 func (r *Request) Target() (string, string) {
 	sp := strings.Split(r.Method, ".")
 	if len(sp) == 2 {
@@ -123,12 +123,12 @@ func (r *Request) Target() (string, string) {
 	return "", r.Method
 }
 
-// Payload - decode parameter into value or return error
+// Payload - called by hirpc.Endpoint to assign call parameter into allocated object
 func (r *Request) Payload(val interface{}) error {
 	return json.Unmarshal(*r.Params, val)
 }
 
-// Result - decode parameter into value or return error
+// Result - called by hirpc.Endpoint to construct method call result from either value or error
 func (r *Request) Result(v interface{}, err error) interface{} {
 	if r.ID == nil {
 		return nil
@@ -174,7 +174,7 @@ func (c *HTTPCodec) EncodeError(w http.ResponseWriter, err error) {
 	enc.Encode(callResponse(nil, nil, err))
 }
 
-// EncodeResults - encode multiple call results into http response
+// EncodeResults - encode call results into http response
 func (c *HTTPCodec) EncodeResults(w http.ResponseWriter, results ...interface{}) {
 	w.Header().Set("Content-Type", jsonContentType)
 	w.WriteHeader(200)

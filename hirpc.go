@@ -81,9 +81,9 @@ type ServiceHandler struct {
 	mw       []func(*CallContext, CallHandler) CallHandler // service-specific call handlers
 }
 
-// CallContext - method call dispatch context
-// Captures information passed by Endpoint into user middleware applied to handler
-// Exposes source call request protocol object and handler method information
+// CallContext - method call dispatch context.
+// Captures information passed by Endpoint into user middleware applied to handler.
+// Exposes source call request protocol object and handler method information.
 type CallContext struct {
 	Request CallRequest   // dispatch source provided by codec, used to construct codec response for this call
 	Service string        // target service name
@@ -92,8 +92,8 @@ type CallContext struct {
 	Result  reflect.Value // allocated result container
 }
 
-// Endpoint - net/http request handler and RPC service registry
-// Decodes http requests using HTTPCodec and schedules procedure calls for execution using CallScheduler
+// Endpoint - net/http request handler and RPC service registry.
+// Decodes http requests using HTTPCodec and schedules procedure calls for execution using CallScheduler.
 type Endpoint struct {
 	mx       sync.RWMutex                                  // used for synchronized service (de-)registration and lookup
 	services map[string]*ServiceHandler                    // registered services
@@ -103,16 +103,16 @@ type Endpoint struct {
 	sched    CallScheduler                                 // request call execution scheduler
 }
 
-// SequentialScheduler - sequential execution call scheduler
+// SequentialScheduler - sequential execution call scheduler.
 type SequentialScheduler struct {
 }
 
-// ConcurrentScheduler - concurrently executing call scheduler
+// ConcurrentScheduler - concurrently executing call scheduler.
 type ConcurrentScheduler struct {
 	Limit int // concurrency limit per request
 }
 
-// Execute - execute handlers in order of appearance
+// Execute - executes handlers in order of appearance.
 func (ss *SequentialScheduler) Execute(ctx context.Context, handlers []func()) error {
 	for _, handle := range handlers {
 		if err := ctx.Err(); err != nil {
@@ -123,7 +123,7 @@ func (ss *SequentialScheduler) Execute(ctx context.Context, handlers []func()) e
 	return nil
 }
 
-// Execute - execute multiple handlers in background limiting concurrency by semaphore instance
+// Execute - executes multiple handlers in background limiting concurrency by semaphore instance.
 func (cs *ConcurrentScheduler) Execute(ctx context.Context, handlers []func()) error {
 	var wg sync.WaitGroup
 	limit := cs.Limit
@@ -152,12 +152,12 @@ func (cs *ConcurrentScheduler) Execute(ctx context.Context, handlers []func()) e
 	return nil
 }
 
-// isCapitalized - returns true if string starts with uppercase
+// isCapitalized - returns true if string starts with uppercase.
 func isCapitalized(s string) bool {
 	return s != "" && unicode.IsUpper(rune(s[0]))
 }
 
-// isExportedOrBuiltin returns true if a type is exported or a builtin.
+// isExportedOrBuiltin - returns true if a type is exported or a builtin.
 func isExportedOrBuiltin(t reflect.Type) bool {
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -165,7 +165,7 @@ func isExportedOrBuiltin(t reflect.Type) bool {
 	return isCapitalized(t.Name()) || t.PkgPath() == ""
 }
 
-// NewEndpoint - create new RPC endpoint, returns nil if codec or sched is nil
+// NewEndpoint - creates new RPC endpoint, returns nil if codec or sched is nil, registers endpoint-level middleware if provided.
 func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*CallContext, CallHandler) CallHandler) *Endpoint {
 	if codec == nil || sched == nil {
 		return nil
@@ -182,7 +182,7 @@ func NewEndpoint(codec HTTPCodec, sched CallScheduler, mw ...func(*CallContext, 
 	return ep
 }
 
-// Service - get service handler by name if exist
+// Service - looks up service handler by name.
 func (ep *Endpoint) Service(name string) (*ServiceHandler, bool) {
 	ep.mx.RLock()
 	defer ep.mx.RUnlock()
@@ -192,7 +192,7 @@ func (ep *Endpoint) Service(name string) (*ServiceHandler, bool) {
 	return nil, false
 }
 
-// Services - get service map copy
+// Services - returns copy of service handlers map.
 func (ep *Endpoint) Services() map[string]*ServiceHandler {
 	ep.mx.RLock()
 	defer ep.mx.RUnlock()
@@ -203,7 +203,7 @@ func (ep *Endpoint) Services() map[string]*ServiceHandler {
 	return services
 }
 
-// Use - replace endpoint middleware list
+// Use - replaces endpoint middleware list.
 func (ep *Endpoint) Use(mw ...func(*CallContext, CallHandler) CallHandler) {
 	for left, right := 0, len(mw)-1; left < right; left, right = left+1, right-1 {
 		mw[left], mw[right] = mw[right], mw[left]
@@ -213,8 +213,8 @@ func (ep *Endpoint) Use(mw ...func(*CallContext, CallHandler) CallHandler) {
 	ep.mw = mw
 }
 
-// Root - register RPC handler instance as namespace root
-// This service is used for method lookup when dispatched service name is empty
+// Root - registers RPC handler instance as namespace root.
+// This service is used for method lookup when dispatched service name is empty.
 func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) error {
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
@@ -226,10 +226,10 @@ func (ep *Endpoint) Root(name string, inst interface{}, mw ...func(*CallContext,
 	return nil
 }
 
-// Register - register RPC handler instance by service name
+// Register - registers RPC handler instance by service name.
 // All exported instance methods matching following signature will be exposed for public access:
 // func (*ExportedType) ExportedMethod(context.Context, *InType, *OutType) error
-// Registering service with empty name returns result of Endpoint.Root method
+// Registering service with empty name returns result of Endpoint.Root method.
 func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) error {
 	if name == "" {
 		return ep.Root(name, inst, mw...)
@@ -244,7 +244,7 @@ func (ep *Endpoint) Register(name string, inst interface{}, mw ...func(*CallCont
 	return nil
 }
 
-// Unregister - remove service from endpoint
+// Unregister - remove service from endpoint.
 func (ep *Endpoint) Unregister(name string) error {
 	ep.mx.Lock()
 	defer ep.mx.Unlock()
@@ -255,7 +255,7 @@ func (ep *Endpoint) Unregister(name string) error {
 	return fmt.Errorf("service not found: %s", name)
 }
 
-// resolve - find service and method handlers matching resolved names
+// resolve - finds service and method handlers matching resolved names.
 func (ep *Endpoint) resolve(service, method string) (*ServiceHandler, *MethodHandler, error) {
 	if service == "" {
 		if ep.root == nil {
@@ -282,7 +282,7 @@ func (ep *Endpoint) resolve(service, method string) (*ServiceHandler, *MethodHan
 	return sh, mh, nil
 }
 
-// Dispatch - resolve call request into CallHandler
+// Dispatch - resolves service and method handlers and constructs CallHandler closure.
 func (ep *Endpoint) Dispatch(cr CallRequest) (CallHandler, error) {
 	ep.mx.RLock()
 	defer ep.mx.RUnlock()
@@ -324,7 +324,7 @@ func (ep *Endpoint) Dispatch(cr CallRequest) (CallHandler, error) {
 	return handler, nil
 }
 
-// newMethodHandler - creates new handler if method signature matches requirements, else returns nil
+// newMethodHandler - creates new handler if method signature matches requirements, else returns nil.
 func newMethodHandler(meth reflect.Method) *MethodHandler {
 	// check if method signature match in general
 	if meth.PkgPath != "" || meth.Type.NumIn() != 4 || meth.Type.NumOut() != 1 {
@@ -354,7 +354,7 @@ func newMethodHandler(meth reflect.Method) *MethodHandler {
 	}
 }
 
-// newServiceHandler - detect and register handler methods in service instance
+// newServiceHandler - detects and registers handler methods in service instance matching signature pattern.
 func newServiceHandler(name string, inst interface{}, mw ...func(*CallContext, CallHandler) CallHandler) (*ServiceHandler, error) {
 	// reverse middleware order
 	for left, right := 0, len(mw)-1; left < right; left, right = left+1, right-1 {
@@ -382,7 +382,7 @@ func newServiceHandler(name string, inst interface{}, mw ...func(*CallContext, C
 	return s, nil
 }
 
-// ServeHTTP - decode request body into multiple call requests and execute them sequentially or concurrently
+// ServeHTTP - decode request body into multiple call requests and execute them sequentially or concurrently.
 func (ep *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requests, err := ep.codec.DecodeRequest(r)
 	if err != nil {
