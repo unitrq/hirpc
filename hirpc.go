@@ -85,7 +85,7 @@ type ServiceHandler struct {
 }
 
 // CallContext - method call dispatch context.
-// Captures information passed by Endpoint into user middleware applied to handler.
+// Captures information resolved by Endpoint into user middleware applied to handler.
 // Exposes source call request protocol object and handler method information.
 type CallContext struct {
 	Request CallRequest   // dispatch source provided by codec, used to construct codec response for this call
